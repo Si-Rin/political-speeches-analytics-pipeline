@@ -1,0 +1,1 @@
+"""Local source adapters package."""

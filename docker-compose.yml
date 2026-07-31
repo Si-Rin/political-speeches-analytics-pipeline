@@ -1,0 +1,101 @@
+name: political-speeches-analytics-pipeline
+
+services:
+  # bronze layer: object storage for raw files
+  minio:
+    image: minio/minio:latest
+    container_name: political-speeches-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"   # S3 API, used by applications to access the object storage
+      - "9001:9001"   # Web console, used by administrators to manage the object storage
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"   # start the MinIO server and expose the web console on port 9001
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # bronze bucket initialization: creates the "bronze" bucket automatically on first startup
+  minio-init:
+    image: minio/mc:latest
+    container_name: political-speeches-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
+      mc mb -p local/bronze &&
+      mc anonymous set download local/bronze || true &&
+      exit 0
+      "
+      # anonymous download access allows anyone to download files from it without authentication, useful for public datasets
+
+  # silver / gold layers: relational + JSONB storage
+  postgres:
+    image: postgres:16
+    container_name: political-speeches-postgres
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init_scripts/postgres:/docker-entrypoint-initdb.d   # run initialization scripts on first startup
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+
+  prefect-server:
+    image: prefecthq/prefect:2-latest
+    container_name: political-speeches-prefect-server
+    restart: unless-stopped
+    ports:
+      - "4200:4200"   # Prefect UI
+    environment:
+      PREFECT_UI_URL: http://localhost:4200
+      PREFECT_API_URL: http://0.0.0.0:4200/api
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      PREFECT_SERVER_API_PORT: 4200
+    command: prefect server start --host 0.0.0.0
+    volumes:
+      - prefect_data:/root/.prefect   # persist Prefect configuration and state
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/health')"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+  prefect-worker:
+    image: prefecthq/prefect:2-latest
+    container_name: political-speeches-prefect-worker
+    restart: unless-stopped
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+    working_dir: /app
+    command: >
+      /bin/sh -c "
+      prefect work-pool create default-pool --type process || true &&
+      prefect worker start --pool default-pool
+      "
+    volumes:
+      - ./prefect:/app   # mount the local "prefect" directory into the container, so that flows can be executed from it
+
+volumes:
+  minio_data:
+  postgres_data:
+  prefect_data:

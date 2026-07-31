@@ -1,0 +1,8 @@
+prefect==2.*
+anyio<4.0
+psycopg2-binary
+minio
+requests
+python-dotenv
+pydantic<2.10,>=2.0
+yt-dlp
