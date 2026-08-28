@@ -10,12 +10,17 @@ For each candidate discovered by a source adapter:
   4. Insert a row into bronze.documents referencing that object key.
 
 Usage:
-    python flows/ingest_bronze.py --source local --folder /data/speeches
-    python flows/ingest_bronze.py --source urls --url-file urls.txt --type video
-    python flows/ingest_bronze.py --source youtube --url-file youtube_urls.txt --audio-only
+    python prefect_flows/bronze_ingest.py --source local --folder /path/to/folder
+    python prefect_flows/bronze_ingest.py --source urls --urls https://example.com/video1.mp4 https://example.com/video2.mp4
+    python prefect_flows/bronze_ingest.py --source youtube --urls https://www.youtube.com/watch?v=abc123 https://www.youtube.com/watch?v=def456
+    python prefect_flows/bronze_ingest.py --source youtube --urls https://www.youtube.com/watch?v=abc123 --audio-only --playlist-mode --max-downloads 10
+    python prefect_flows/bronze_ingest.py --source miller_center --start-url https://millercenter.org/president/kennedy/speeches
+    python prefect_flows/bronze_ingest.py --source miller_center --urls https://millercenter.org/president/kennedy/speeches https://millercenter.org/president/johnson/speeches
+    python prefect_flows/bronze_ingest.py --source web_crawl --seed-urls https://example.com --keywords "politics" "speech" --allowed-domains example.com
 """
 import argparse
 import hashlib
+import json
 import os
 import sys
 from dotenv import load_dotenv
@@ -23,17 +28,21 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-import psycopg2
 import requests
-from minio import Minio
+from psycopg2.extras import Json
 from minio.error import S3Error
 from prefect import flow, task, get_run_logger
+
+from prefect_flows.clients import get_minio_client, get_postgres_connection
+from prefect_flows.sources.internet_archive import InternetArchiveSource
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))  # so "sources.*" imports resolve
 from prefect_flows.sources.base import Candidate
 from prefect_flows.sources.local_folder import LocalFolderSource
-from prefect_flows.sources.url_s import UrlListSource
 from prefect_flows.sources.youtube import YoutubeSource
+from prefect_flows.sources.miller_center import MillerCenterSource
+from prefect_flows.sources.web_scraping import WebCrawlSource
+from prefect_flows.sources.ucsb_tweets import UcsbTweetsSource
 
 # Loads variables from a .env file in the current working directory (or any
 # parent directory) into os.environ, if present. No-op inside Docker
@@ -44,42 +53,45 @@ load_dotenv()
 CHUNK_SIZE = 8 * 1024 * 1024  # 8MB streaming chunks
 
 
-def get_minio_client() -> Minio:
-    return Minio(
-        os.environ.get("MINIO_ENDPOINT", "minio:9000"),
-        access_key=os.environ["MINIO_ROOT_USER"],
-        secret_key=os.environ["MINIO_ROOT_PASSWORD"],
-        secure=False,
-    )
-
-
-def get_pg_conn():  
-    return psycopg2.connect(
-        host=os.environ.get("POSTGRES_HOST", "127.0.0.1"),
-        port=os.environ.get("POSTGRES_PORT", "5433"),
-        user=os.environ["POSTGRES_USER"],
-        password=os.environ["POSTGRES_PASSWORD"],
-        dbname=os.environ["POSTGRES_DB"],
-        client_encoding='utf8',  # Force PostgreSQL to communicate in UTF-8
-        options="-c lc_messages=C",    # Force PostgreSQL to use C locale for messages (avoids locale issues)
-        gssencmode="disable"  # skip Windows SSPI/GSSAPI negotiation
-    )
-
-
 @task
 def discover(source_name: str, **source_kwargs) -> list[Candidate]:
     logger = get_run_logger()
     if source_name == "local":
         source = LocalFolderSource(folder=source_kwargs["folder"])
-    elif source_name == "urls":
-        source = UrlListSource(
-            urls=source_kwargs["urls"],
-            source_type=source_kwargs.get("source_type", "video"),
-        )
     elif source_name == "youtube":
         source = YoutubeSource(
             urls=source_kwargs["urls"],
             audio_only=source_kwargs.get("audio_only", False),
+            playlist_mode=source_kwargs.get("playlist_mode", False),
+            max_downloads=source_kwargs.get("max_downloads"),
+        )
+    elif source_name == "web_crawl":
+        source = WebCrawlSource(
+            seed_urls=source_kwargs["seed_urls"],
+            keywords=source_kwargs["keywords"],
+            allowed_domains=source_kwargs.get("allowed_domains"),
+            max_depth=source_kwargs.get("max_depth", 2),
+            max_pages=source_kwargs.get("max_pages", 50),
+        )
+    elif source_name == "miller_center":
+        source = MillerCenterSource(
+            urls=source_kwargs.get("urls"),
+            start_url=source_kwargs.get("start_url"),
+            max_depth=source_kwargs.get("max_depth", 100),     
+            crawl_delay=source_kwargs.get("crawl_delay", 5.0),
+            request_timeout=source_kwargs.get("request_timeout", 10.0),
+        )
+    elif source_name == "ucsb_tweets":
+        source = UcsbTweetsSource(
+            listing_url=source_kwargs.get("listing_url"),
+            link_text_filter=source_kwargs.get("link_text_filter", "tweets of"),
+            max_documents=source_kwargs.get("max_documents", 1),
+            crawl_delay=source_kwargs.get("crawl_delay", 1.0),
+        )
+    elif source_name=="internet_archive":
+        source = InternetArchiveSource(
+            urls=source_kwargs["urls"],
+            excluded_indices=source_kwargs.get("excluded_indices", {})
         )
     else:
         raise ValueError(f"Unknown source '{source_name}'")
@@ -134,7 +146,7 @@ def checksum_and_stage(candidate: Candidate) -> dict:
 
 @task
 def is_duplicate(checksum: str) -> bool:
-    conn = get_pg_conn()
+    conn = get_postgres_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT 1 FROM bronze.documents WHERE checksum = %s", (checksum,))
@@ -165,15 +177,15 @@ def upload_and_register(staged: dict) -> Optional[int]:
             content_type=candidate.mime_type or "application/octet-stream",
         )
 
-        conn = get_pg_conn()
+        conn = get_postgres_connection()
         try:
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO bronze.documents
                         (source_url, source_type, file_name, file_size,
-                         mime_type, checksum, storage_path)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                         mime_type, checksum, raw_metadata, storage_path)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING doc_id
                     """,
                     (
@@ -183,6 +195,7 @@ def upload_and_register(staged: dict) -> Optional[int]:
                         file_size,
                         candidate.mime_type,
                         checksum,
+                        Json(candidate.raw_metadata) if candidate.raw_metadata else None,
                         object_key,
                     ),
                 )
@@ -229,14 +242,25 @@ def ingest_bronze(source_name: str, **source_kwargs):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--source", required=True, choices=["local", "urls", "youtube"])
+    parser.add_argument("--source", required=True, choices=["local", "miller_center", "youtube", "web_crawl", "ucsb_tweets", "internet_archive"], help="Source adapter to use for discovery")
     parser.add_argument("--folder", help="Folder path (required for --source local)")
     parser.add_argument("--url-file", help="Text file, one URL per line (alternative to --urls)")
     parser.add_argument("--urls", nargs="+", help="One or more URLs directly on the command line")
-    parser.add_argument("--type", dest="source_type", default="video", choices=["video", "audio", "text"],
-                         help="source_type to assign for --source urls")
-    parser.add_argument("--audio-only", action="store_true",
-                         help="For --source youtube: download audio track only")
+    parser.add_argument("--start-url", help="Starting URL for crawl mode (required for --source miller_center)")
+    parser.add_argument("--type", dest="source_type", default="video", choices=["video", "audio", "text"], help="source_type to assign for --source urls")
+    parser.add_argument("--audio-only", action="store_true", help="For --source youtube: download audio track only")
+    parser.add_argument("--playlist-mode", action="store_true", help="For --source youtube: treat URLs as playlists and download all entries")
+    parser.add_argument("--max-downloads", type=int, help="For --source youtube: maximum number of entries to download from each playlist")
+    parser.add_argument("--seed-urls", nargs="+", help="Seed URLs for web crawl (required for --source web_crawl)")
+    parser.add_argument("--keywords", nargs="+", help="Keywords for web crawl (required for --source web_crawl)")
+    parser.add_argument("--allowed-domains", nargs="+", help="Allowed domains for web crawl (optional for --source web_crawl)")
+    parser.add_argument("--max-depth", type=int, default=100, help="Maximum depth for web crawl and miller center (optional for --source web_crawl and --source miller_center)")
+    parser.add_argument("--max-pages", type=int, default=50, help="Maximum pages for web crawl (optional for --source web_crawl)")
+    parser.add_argument("--listing-url", help="President's document listing page (required for --source ucsb_tweets)") 
+    parser.add_argument("--max-documents", type=int, default=1, help="Max tweet-day documents to yield for --source ucsb_tweets")
+    parser.add_argument("--link-text-filter", default="tweets of", help="Anchor-text substring filter for --source ucsb_tweets")
+    parser.add_argument("--excluded-indices", help="JSON file: {identifier: [idx, ...]} for --source internet_archive")
+    
     args = parser.parse_args()
 
     def _resolve_urls():
@@ -251,7 +275,50 @@ if __name__ == "__main__":
         if not args.folder:
             parser.error("--folder is required for --source local")
         ingest_bronze(source_name="local", folder=args.folder)
-    elif args.source == "urls":
-        ingest_bronze(source_name="urls", urls=_resolve_urls(), source_type=args.source_type)
     elif args.source == "youtube":
-        ingest_bronze(source_name="youtube", urls=_resolve_urls(), audio_only=args.audio_only)
+        ingest_bronze(source_name="youtube", 
+            urls=_resolve_urls(), 
+            audio_only=args.audio_only, 
+            playlist_mode=args.playlist_mode, 
+            max_downloads=args.max_downloads
+        )
+    elif args.source == "web_crawl":
+        if not args.seed_urls or not args.keywords:
+            parser.error("--seed-urls and --keywords are required for --source web_crawl")
+        ingest_bronze(
+            source_name="web_crawl",
+            seed_urls=args.seed_urls,
+            keywords=args.keywords,
+            allowed_domains=args.allowed_domains,
+            max_depth=args.max_depth,
+            max_pages=args.max_pages
+        )
+    elif args.source == "miller_center":
+        if not args.start_url and not args.urls:
+            parser.error("--start-url or --urls is required for --source miller_center")
+        ingest_bronze(
+            source_name="miller_center",
+            start_url=args.start_url,
+            urls=args.urls,
+            max_depth=args.max_depth
+        )
+    elif args.source == "ucsb_tweets":
+        if not args.listing_url:
+            parser.error("--listing-url is required for --source ucsb_tweets")
+        ingest_bronze(
+            source_name="ucsb_tweets",
+            listing_url=args.listing_url,
+            link_text_filter=args.link_text_filter,
+            max_documents=args.max_documents,
+        )
+    elif args.source == "internet_archive":
+        excluded = {}
+        if args.excluded_indices:
+            with open(args.excluded_indices, "r") as f:
+                excluded = json.load(f)
+        ingest_bronze(
+            source_name="internet_archive",
+            urls=_resolve_urls(),
+            excluded_indices=excluded
+        )
+            
