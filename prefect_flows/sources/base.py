@@ -16,10 +16,11 @@ class Candidate:
     file_name: str
     is_local: bool = False 
     mime_type: Optional[str] = None
+    raw_metadata: Optional[dict] = None  # for RSS feed metadata, YouTube video metadata, ...
 
 
 class BaseSource(ABC):
-    """Subclass this for each new type of speech source."""
+    """Subclassed for each new type of speech source"""
 
     @abstractmethod
     def discover(self) -> Iterator[Candidate]:

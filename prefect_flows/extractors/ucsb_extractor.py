@@ -93,7 +93,7 @@ class UcsbTweetsExtractor(BaseExtractor):
         h1 = title_div.find("h1") if title_div else None
         return h1.get_text(strip=True) if h1 else None
 
-    def extract_publication_date(self, local_path: str, raw_metadata: dict) -> Optional[str]:
+    def extract_pub_date(self, local_path: str, raw_metadata: dict) -> Optional[str]:
         soup = self._soup(local_path)
         date_div = soup.find("div", class_="field-docs-start-date-time")
         date_span = date_div.find("span", attrs={"property": "dc:date"}) if date_div else None
