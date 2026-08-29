@@ -121,7 +121,7 @@ class YoutubeSource(BaseSource):
                         raise FileNotFoundError(f"yt-dlp reported success but file not found: {downloaded_path}")
 
                     yield Candidate(
-                        source_url=str(downloaded_path),
+                        source_url=entry_url,
                         source_type="audio" if self.audio_only else "video",
                         file_name=downloaded_path.name,
                         is_local=True,
