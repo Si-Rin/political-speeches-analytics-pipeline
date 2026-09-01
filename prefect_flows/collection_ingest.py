@@ -1,11 +1,9 @@
 """Single-document collection flow used by the Streamlit UI.
 
-The UI should collect user-friendly metadata, while this flow reuses the
-existing Bronze staging/upload tasks so the storage and deduplication logic
-remains in one place.
+The UI collects user-friendly metadata, while this flow reuses the existing
+Bronze staging/upload tasks so storage and deduplication stay centralized.
 """
 
-import mimetypes
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -15,7 +13,6 @@ from prefect import flow, get_run_logger
 from prefect_flows.bronze_ingest import checksum_and_stage, is_duplicate, upload_and_register
 from prefect_flows.sources.base import Candidate
 from prefect_flows.sources.url_s import UrlListSource
-from prefect_flows.sources.youtube import YoutubeSource
 
 
 _ALLOWED_EXTENSIONS = {
@@ -31,7 +28,6 @@ _ALLOWED_EXTENSIONS = {
     ".txt": "text",
     ".html": "text",
     ".htm": "text",
-    ".pdf": "text",
 }
 
 
@@ -50,13 +46,14 @@ def _local_candidate(path: str, content_type: str, metadata: dict) -> Candidate:
             f"Supported formats: {', '.join(sorted(_ALLOWED_EXTENSIONS))}"
         )
 
-    mime_type, _ = mimetypes.guess_type(str(file_path))
     if content_type != detected_type:
         raise ValueError(
             f"The selected content type is '{content_type}', but the file extension "
             f"is normally treated as '{detected_type}'."
         )
 
+    import mimetypes
+    mime_type, _ = mimetypes.guess_type(str(file_path))
     return Candidate(
         source_url=str(file_path),
         source_type=content_type,
@@ -81,13 +78,8 @@ def collect_document(
     metadata: Optional[dict] = None,
     url: Optional[str] = None,
     local_path: Optional[str] = None,
-    youtube_audio_only: bool = False,
 ) -> dict:
-    """Collect exactly one user-submitted document into Bronze.
-
-    source_kind: "url", "youtube", or "local"
-    content_type: "text", "audio", or "video"
-    """
+    """Collect exactly one user-submitted document into Bronze."""
     logger = get_run_logger()
     metadata = metadata or {}
 
@@ -98,17 +90,6 @@ def collect_document(
         if not local_path:
             raise ValueError("A local path is required")
         candidate = _local_candidate(local_path, content_type, metadata)
-
-    elif source_kind == "youtube":
-        if not url:
-            raise ValueError("A YouTube URL is required")
-        audio_only = content_type == "audio" or youtube_audio_only
-        source = YoutubeSource(urls=[url], audio_only=audio_only, playlist_mode=False)
-        candidates = list(source.discover())
-        if not candidates:
-            raise ValueError("The YouTube URL could not be downloaded")
-        candidate = candidates[0]
-        candidate.raw_metadata = {**(candidate.raw_metadata or {}), **metadata}
 
     elif source_kind == "url":
         if not url:
@@ -125,8 +106,7 @@ def collect_document(
     checksum = staged["checksum"]
 
     if is_duplicate(checksum):
-        staged_path = staged["tmp_path"]
-        Path(staged_path).unlink(missing_ok=True)
+        Path(staged["tmp_path"]).unlink(missing_ok=True)
         logger.info("Document skipped because the same content already exists")
         return {
             "status": "duplicate",
