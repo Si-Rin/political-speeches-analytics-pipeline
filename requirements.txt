@@ -9,4 +9,3 @@ yt-dlp
 beautifulsoup4
 trafilatura== 2.2.0
 pydub
-streamlit

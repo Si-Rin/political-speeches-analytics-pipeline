@@ -52,5 +52,5 @@ class InternetArchiveExtractor(BaseExtractor):
     def extract_title(self, local_path: str, raw_metadata: dict) -> Optional[str]:
         return raw_metadata.get("title")
 
-    def extract_publication_date(self, local_path: str, raw_metadata: dict) -> Optional[str]:
+    def extract_pub_date(self, local_path: str, raw_metadata: dict) -> Optional[str]:
         return parse_date(raw_metadata.get("publication_date"))
