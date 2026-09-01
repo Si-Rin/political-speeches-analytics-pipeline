@@ -33,7 +33,7 @@ def get_pending_documents(limit: Optional[int] = None, doc_ids: Optional[list[in
   try:
     with conn.cursor() as cur:
       base = """
-          SELECT b.doc_id, b.source_type, b.storage_path, b.raw_metadata
+          SELECT b.doc_id, b.source_type, b.storage_path, b.raw_metadata, b.file_size
           FROM bronze.documents b
           LEFT JOIN silver.text s ON s.doc_id = b.doc_id
           WHERE (s.doc_id IS NULL OR s.status_processing != 'success') AND b.excluded = FALSE
@@ -41,7 +41,7 @@ def get_pending_documents(limit: Optional[int] = None, doc_ids: Optional[list[in
       if doc_ids:
         cur.execute(base+" AND b.doc_id = ANY(%s)", (doc_ids,))
       elif limit:
-        cur.execute(base + " ORDER BY b.doc_id LIMIT %s", (limit,))
+        cur.execute(base + " ORDER BY b.file_size LIMIT %s", (limit,))
       else:
           cur.execute(base + " ORDER BY b.doc_id")
       rows = cur.fetchall()

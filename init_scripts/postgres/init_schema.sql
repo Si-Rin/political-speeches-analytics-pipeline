@@ -45,11 +45,12 @@ CREATE INDEX IF NOT EXISTS idx_silver_publication_date ON silver.text(publicatio
 CREATE TABLE IF NOT EXISTS gold.analytics (
     doc_id          INT PRIMARY KEY REFERENCES silver.text(doc_id) ON DELETE CASCADE,
     topics          JSONB,      -- label, score, ... (e.g., {"politics": 0.8, "sports": 0.1, "entertainment": 0.05})
-    labels          JSONB,      -- zero-shot multi-label output ("topics" attribute is for unsupervised topic modeling, "labels" is for supervised classification)
+    labels          JSONB,      -- zero-shot NLI-based classification against a predefined taxonomy ("topics" is unsupervised/emergent topic modeling; "labels" is classification against fixed categories, not conventional supervised learning)
     sentiment       JSONB,      -- label, score, ...
     emotions        JSONB,      -- {"joy": 0.6, "anger": 0.05, ...}
     entities        JSONB,      -- persons, organizations, locations, dates, etc.
-    lex_metrics     JSONB,      -- pronoun ratios, buzzwords, repetitions, oppositions
+    lex_metrics         JSONB,  -- pronoun ratios, top content words, repetitions, oppositions, n-grams, lexical diversity
+    syntactic_metrics   JSONB,  -- speech stats, modality markers, POS distribution, verb tense
     keywords        JSONB,      -- c-TF-IDF keywords per topic
     analysis_date   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -77,6 +78,7 @@ SELECT
     g.emotions,
     g.entities,
     g.lex_metrics,
+    g.syntactic_metrics,
     g.keywords,
     g.analysis_date
 FROM bronze.documents b
