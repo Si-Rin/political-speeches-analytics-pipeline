@@ -1,5 +1,5 @@
 """
-Collection page: add a source -> review detected information -> submit -> see confirmation. 
+Collection page: add a source -> review detected information -> submit -> see confirmation.
 
 Actual ingestion progress is tracked on the Pipeline Status page (this page doesn't block/wait for ingestion to finish).
 """
@@ -54,12 +54,11 @@ if result is not None:
         cols[1].metric("File name", result.get("detected_file_name") or "—")
         cols[2].metric("MIME type", result.get("detected_mime_type") or "—")
 
-        cols2 = st.columns(3)
+        cols2 = st.columns(2)
         size = result.get("detected_size_bytes")
         cols2[0].metric("Size", f"{size / 1_000_000:.1f} MB" if size else "—")
         duration = result.get("detected_duration_seconds")
         cols2[1].metric("Duration", f"{duration / 60:.1f} min" if duration else "—")
-        cols2[2].metric("Uploader / speaker", result.get("detected_uploader") or "—")
 
         for w in result.get("warnings", []):
             st.warning(w)

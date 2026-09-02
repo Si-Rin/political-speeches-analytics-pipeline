@@ -21,24 +21,15 @@ from backend.pipeline_runner import trigger_single_item_ingestion
 
 router = APIRouter()
 
-# Best-effort speaker extraction from bronze.raw_metadata — no source adapter reliably captures this today (Miller Center only stores {"source_name": "miller_center"}; only YouTube gives uploader/channel).
-# This will be empty for most documents until sources are enriched.
-_SPEAKER_KEYS = ["speaker", "uploader", "channel", "president"]
-
-
-def _extract_speaker(raw_metadata: Optional[dict]) -> Optional[str]:
-    if not raw_metadata:
-        return None
-    for key in _SPEAKER_KEYS:
-        if raw_metadata.get(key):
-            return raw_metadata[key]
-    return None
+# This project is dedicated exclusively to Donald Trump speeches.
+# The client never supplies a speaker value; the backend owns this invariant.
+SPEAKER = "Donald Trump"
 
 
 @router.post("/documents/probe", response_model=ProbeResponse)
 def probe_source(req: ProbeRequest):
     """
-    Lightweight metadata detection — no download, no DB write. 
+    Lightweight metadata detection — no download, no DB write.
     Used by the Collection UI's "review detected information" step, before the user confirms with /documents/submit.
     """
     result = probe(req.location, req.is_local, req.content_type)
@@ -48,16 +39,21 @@ def probe_source(req: ProbeRequest):
 @router.post("/documents/submit", response_model=SubmitResponse)
 def submit_source(req: SubmitRequest):
     """
-    Triggers Bronze ingestion for one item and returns immediately
-    Does not wait for it to finish (that can take a while for video/audio downloads)
-    See pipeline_runner.py for why this is a subprocess call rather than a direct function call
+    Triggers Bronze ingestion for one item and returns immediately.
+    Does not wait for it to finish (that can take a while for video/audio downloads).
+
+    The speaker is deliberately not part of SubmitRequest: this API owns the
+    project-level invariant that every collected speech belongs to Donald Trump.
     """
+    raw_metadata = dict(req.raw_metadata or {})
+    raw_metadata["speaker"] = SPEAKER
+
     trigger_single_item_ingestion(
         location=req.location,
         is_local=req.is_local,
         content_type=req.content_type,
         is_youtube=is_youtube_url(req.location) if not req.is_local else False,
-        raw_metadata=req.raw_metadata,
+        raw_metadata=raw_metadata,
     )
     return SubmitResponse(
         accepted=True,
@@ -100,7 +96,7 @@ def get_history(limit: int = 100, source_type: Optional[str] = None):
             doc_id=doc_id,
             source=source_url or file_name or "",
             source_type=source_type_,
-            speaker=_extract_speaker(raw_metadata),
+            speaker=SPEAKER,
             title=title,
             publication_date=publication_date,
             ingestion_date=ingestion_date,
@@ -139,7 +135,7 @@ def get_document(doc_id: int):
         doc_id=doc_id,
         source=source_url or file_name or "",
         source_type=source_type_,
-        speaker=_extract_speaker(raw_metadata),
+        speaker=SPEAKER,
         title=title,
         publication_date=publication_date,
         ingestion_date=ingestion_date,
