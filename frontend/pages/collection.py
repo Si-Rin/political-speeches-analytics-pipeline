@@ -49,16 +49,37 @@ if result is not None:
         for w in result.get("warnings", []):
             st.error(w)
     else:
-        cols = st.columns(3)
-        cols[0].metric("Title", result.get("detected_title") or "—")
-        cols[1].metric("File name", result.get("detected_file_name") or "—")
-        cols[2].metric("MIME type", result.get("detected_mime_type") or "—")
+        # Only display metadata that was actually detected.
+        # This avoids showing placeholder dashes for fields that do not
+        # apply to a particular source type (e.g. YouTube URLs).
+        detected_fields = []
 
-        cols2 = st.columns(2)
+        title = result.get("detected_title")
+        if title:
+            detected_fields.append(("Title", title))
+
+        file_name = result.get("detected_file_name")
+        if file_name:
+            detected_fields.append(("File name", file_name))
+
+        mime_type = result.get("detected_mime_type")
+        if mime_type:
+            detected_fields.append(("MIME type", mime_type))
+
         size = result.get("detected_size_bytes")
-        cols2[0].metric("Size", f"{size / 1_000_000:.1f} MB" if size else "—")
+        if size:
+            detected_fields.append(("Size", f"{size / 1_000_000:.1f} MB"))
+
         duration = result.get("detected_duration_seconds")
-        cols2[1].metric("Duration", f"{duration / 60:.1f} min" if duration else "—")
+        if duration:
+            detected_fields.append(("Duration", f"{duration / 60:.1f} min"))
+
+        if detected_fields:
+            columns = st.columns(min(3, len(detected_fields)))
+            for index, (label, value) in enumerate(detected_fields):
+                columns[index % len(columns)].metric(label, value)
+        else:
+            st.info("No metadata could be detected automatically.")
 
         for w in result.get("warnings", []):
             st.warning(w)
