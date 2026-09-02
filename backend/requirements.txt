@@ -1,0 +1,10 @@
+# Backend (FastAPI) dependencies — deliberately does NOT include `prefect` to keep it compatible with a Streamlit frontend (anyio>=4.0)
+# Flows are triggered via subprocess (see backend/pipeline_runner.py), not imported as Python objects, so this venv never inherits Prefect's anyio<4.0 pin
+fastapi
+uvicorn[standard]
+psycopg2-binary
+minio
+pydantic<2.10,>=2.0
+python-dotenv
+yt-dlp
+requests
