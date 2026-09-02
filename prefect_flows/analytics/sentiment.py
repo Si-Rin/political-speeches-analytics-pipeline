@@ -55,7 +55,7 @@ def analyze_sentiment(text: str) -> Dict:
         chunk_words = len(chunk.split())
         if chunk_words == 0:
             continue
-        chunk_result = pipe(chunk)[0]  # list of {"label": ..., "score": ...} for every class
+        chunk_result = pipe(chunk, truncation=True)[0]  # list of {"label": ..., "score": ...} for every class
         for entry in chunk_result:
             weighted_scores[entry["label"].lower()] += entry["score"] * chunk_words
         total_words += chunk_words
