@@ -64,7 +64,8 @@ def submit_source(req: SubmitRequest):
 
 
 @router.get("/documents/history", response_model=DocumentHistoryResponse)
-def get_history(limit: int = 100, source_type: Optional[str] = None):
+def get_history(source_type: Optional[str] = None):
+    """Return all non-excluded documents, newest first."""
     conn = get_postgres_connection()
     try:
         with conn.cursor() as cur:
@@ -80,8 +81,7 @@ def get_history(limit: int = 100, source_type: Optional[str] = None):
             if source_type:
                 query += " AND b.source_type = %s"
                 params.append(source_type)
-            query += " ORDER BY b.ingestion_date DESC LIMIT %s"
-            params.append(limit)
+            query += " ORDER BY b.ingestion_date DESC"
 
             cur.execute(query, params)
             rows = cur.fetchall()
