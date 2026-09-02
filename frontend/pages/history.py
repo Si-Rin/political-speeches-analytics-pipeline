@@ -11,6 +11,8 @@ import streamlit as st
 
 from api_client import get_history
 
+st.set_page_config(layout="wide")
+
 st.title("History")
 
 col1, col2 = st.columns([3, 1])
