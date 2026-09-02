@@ -45,10 +45,6 @@ from prefect_flows.sources.miller_center import MillerCenterSource
 from prefect_flows.sources.web_scraping import WebCrawlSource
 from prefect_flows.sources.ucsb_tweets import UcsbTweetsSource
 
-# Loads variables from a .env file in the current working directory (or any
-# parent directory) into os.environ, if present. No-op inside Docker
-# containers where the vars are already injected by docker-compose — but
-# required when running this script directly from a local venv.
 load_dotenv()
 
 CHUNK_SIZE = 8 * 1024 * 1024  # 8MB streaming chunks
@@ -78,7 +74,7 @@ def discover(source_name: str, **source_kwargs) -> list[Candidate]:
         source = MillerCenterSource(
             urls=source_kwargs.get("urls"),
             start_url=source_kwargs.get("start_url"),
-            max_depth=source_kwargs.get("max_depth", 100),     
+            max_depth=source_kwargs.get("max_depth", 100),
             crawl_delay=source_kwargs.get("crawl_delay", 5.0),
             request_timeout=source_kwargs.get("request_timeout", 10.0),
         )
@@ -89,7 +85,7 @@ def discover(source_name: str, **source_kwargs) -> list[Candidate]:
             max_documents=source_kwargs.get("max_documents", 1),
             crawl_delay=source_kwargs.get("crawl_delay", 1.0),
         )
-    elif source_name=="internet_archive":
+    elif source_name == "internet_archive":
         source = InternetArchiveSource(
             urls=source_kwargs["urls"],
             excluded_indices=source_kwargs.get("excluded_indices", {})
@@ -122,7 +118,16 @@ def checksum_and_stage(candidate: Candidate) -> dict:
 
     try:
         with os.fdopen(tmp_fd, "wb") as tmp_file:
-            if candidate.is_local:
+            # Some sources (notably YouTube) download the media during
+            # discovery. In that case source_url remains the original URL
+            # for provenance, while local_path points to the actual bytes.
+            local_path = candidate.local_path
+            if local_path:
+                with open(local_path, "rb") as src:
+                    while chunk := src.read(CHUNK_SIZE):
+                        sha256.update(chunk)
+                        tmp_file.write(chunk)
+            elif candidate.is_local:
                 with open(candidate.source_url, "rb") as src:
                     while chunk := src.read(CHUNK_SIZE):
                         sha256.update(chunk)
@@ -148,7 +153,7 @@ def checksum_and_stage(candidate: Candidate) -> dict:
         }
     except Exception:
         if os.path.exists(tmp_path):
-            os.remove(tmp_path)  # don't leak temp files on failure
+            os.remove(tmp_path)
         raise
 
 
@@ -264,13 +269,12 @@ if __name__ == "__main__":
     parser.add_argument("--allowed-domains", nargs="+", help="Allowed domains for web crawl (optional for --source web_crawl)")
     parser.add_argument("--max-depth", type=int, default=100, help="Maximum depth for web crawl and miller center (optional for --source web_crawl and --source miller_center)")
     parser.add_argument("--max-pages", type=int, default=50, help="Maximum pages for web crawl (optional for --source web_crawl)")
-    parser.add_argument("--listing-url", help="President's document listing page (required for --source ucsb_tweets)") 
+    parser.add_argument("--listing-url", help="President's document listing page (required for --source ucsb_tweets)")
     parser.add_argument("--max-documents", type=int, default=1, help="Max tweet-day documents to yield for --source ucsb_tweets")
     parser.add_argument("--link-text-filter", default="tweets of", help="Anchor-text substring filter for --source ucsb_tweets")
     parser.add_argument("--excluded-indices", help="JSON file: {identifier: [idx, ...]} for --source internet_archive")
     parser.add_argument("--is-local", action="store_true", help="For --source single: --location is a local file path, not a URL")
     parser.add_argument("--raw-metadata", help="JSON string of probe-detected metadata to attach, for --source single")
-    
     args = parser.parse_args()
 
     def _resolve_urls():
@@ -286,10 +290,11 @@ if __name__ == "__main__":
             parser.error("--folder is required for --source local")
         ingest_bronze(source_name="local", folder=args.folder)
     elif args.source == "youtube":
-        ingest_bronze(source_name="youtube", 
-            urls=_resolve_urls(), 
-            audio_only=args.audio_only, 
-            playlist_mode=args.playlist_mode, 
+        ingest_bronze(
+            source_name="youtube",
+            urls=_resolve_urls(),
+            audio_only=args.audio_only,
+            playlist_mode=args.playlist_mode,
             max_downloads=args.max_downloads
         )
     elif args.source == "web_crawl":
@@ -341,4 +346,3 @@ if __name__ == "__main__":
             is_local=args.is_local,
             raw_metadata=json.loads(args.raw_metadata) if args.raw_metadata else None,
         )
-            
