@@ -12,6 +12,8 @@ import streamlit as st
 
 from api_client import probe_source, submit_source
 
+st.set_page_config(layout="wide")
+
 st.title("Add a source")
 
 if "probe_result" not in st.session_state:
