@@ -30,6 +30,7 @@ CREATE INDEX IF NOT EXISTS idx_bronze_ingestion_date ON bronze.documents(ingesti
 CREATE TABLE IF NOT EXISTS silver.text (
     doc_id              INT PRIMARY KEY REFERENCES bronze.documents(doc_id) ON DELETE CASCADE,
     title               TEXT,               -- optional
+    speaker             VARCHAR(255),       -- optional
     publication_date    DATE,               -- optional
     transcript          TEXT,
     word_count          INT,
