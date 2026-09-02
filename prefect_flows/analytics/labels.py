@@ -75,11 +75,11 @@ def classify_labels(
         }
     """
     classifier = get_classifier()
-    chunks = chunk_text(text=text, tokenizer=classifier.tokenizer, model=classifier.model)
+    chunks = chunk_text(text=text, tokenizer=classifier.tokenizer, model=classifier.model, reserved_special_tokens=classifier.tokenizer.num_special_tokens_to_add(pair=True))
 
     best_scores = {label: 0.0 for label in candidate_labels}
     for chunk in chunks:
-        result = classifier(chunk, candidate_labels, multi_label=True)
+        result = classifier(chunk, candidate_labels, multi_label=True, truncation=True)
         for label, score in zip(result["labels"], result["scores"]):
             if score > best_scores[label]:
                 best_scores[label] = score

@@ -35,6 +35,7 @@ from prefect import flow, task, get_run_logger
 
 from prefect_flows.clients import get_minio_client, get_postgres_connection
 from prefect_flows.sources.internet_archive import InternetArchiveSource
+from prefect_flows.sources.single_item import SingleItemSource
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))  # so "sources.*" imports resolve
 from prefect_flows.sources.base import Candidate
@@ -92,6 +93,13 @@ def discover(source_name: str, **source_kwargs) -> list[Candidate]:
         source = InternetArchiveSource(
             urls=source_kwargs["urls"],
             excluded_indices=source_kwargs.get("excluded_indices", {})
+        )
+    elif source_name == "single":
+        source = SingleItemSource(
+            location=source_kwargs["location"],
+            source_type=source_kwargs["content_type"],
+            is_local=source_kwargs["is_local"],
+            raw_metadata=source_kwargs.get("raw_metadata"),
         )
     else:
         raise ValueError(f"Unknown source '{source_name}'")
@@ -260,6 +268,8 @@ if __name__ == "__main__":
     parser.add_argument("--max-documents", type=int, default=1, help="Max tweet-day documents to yield for --source ucsb_tweets")
     parser.add_argument("--link-text-filter", default="tweets of", help="Anchor-text substring filter for --source ucsb_tweets")
     parser.add_argument("--excluded-indices", help="JSON file: {identifier: [idx, ...]} for --source internet_archive")
+    parser.add_argument("--is-local", action="store_true", help="For --source single: --location is a local file path, not a URL")
+    parser.add_argument("--raw-metadata", help="JSON string of probe-detected metadata to attach, for --source single")
     
     args = parser.parse_args()
 
@@ -320,5 +330,15 @@ if __name__ == "__main__":
             source_name="internet_archive",
             urls=_resolve_urls(),
             excluded_indices=excluded
+        )
+    elif args.source == "single":
+        if not args.location:
+            parser.error("--location is required for --source single")
+        ingest_bronze(
+            source_name="single",
+            location=args.location,
+            content_type=args.source_type,
+            is_local=args.is_local,
+            raw_metadata=json.loads(args.raw_metadata) if args.raw_metadata else None,
         )
             
