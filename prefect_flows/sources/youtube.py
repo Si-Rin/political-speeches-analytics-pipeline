@@ -126,12 +126,13 @@ class YoutubeSource(BaseSource):
                         file_name=downloaded_path.name,
                         is_local=True,
                         mime_type="audio/mp4" if self.audio_only else "video/mp4",
-                        raw_metadata=self._extract_metadata(info)
+                        raw_metadata=self._extract_metadata(info),
+                        local_path=str(downloaded_path),
                     )
                 except Exception as e:
                     failed_count += 1
                     # one bad/unavailable url shouldnt stop the whole batch
-                    print(f"[YoutubeSource] Failed to download '{entry_url}': {e}")
+                    print(f"[YoutubeSource] Failed to download '{entry_url}': {type(e).__name__}: {e}")
                     continue
                 finally:
                     time.sleep(2)
