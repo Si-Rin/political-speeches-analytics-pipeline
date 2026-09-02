@@ -11,6 +11,8 @@ import streamlit as st
 
 from api_client import get_all_statuses
 
+st.set_page_config(layout="wide")
+
 st.title("Pipeline Status")
 
 if st.button("Refresh"):
