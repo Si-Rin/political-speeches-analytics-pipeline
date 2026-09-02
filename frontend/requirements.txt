@@ -1,0 +1,4 @@
+# Frontend (Streamlit) dependencies — kept in its own venv, separate from both prefect_flows/ (requirements.txt, anyio<4.0) and backend/ (backend_requirements.txt). 
+# Streamlit itself requires anyio>=4.0, hence the split.
+streamlit
+requests
