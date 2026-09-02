@@ -47,6 +47,7 @@ def trigger_single_item_ingestion(
             PIPELINE_PYTHON, "-m", "prefect_flows.bronze_ingest",
             "--source", "youtube",
             "--urls", location,
+            "--audio-only" if content_type == "audio" else "",
         ]
     else:
         cmd = [
@@ -60,9 +61,12 @@ def trigger_single_item_ingestion(
         if raw_metadata:
             cmd += ["--raw-metadata", json.dumps(raw_metadata)]
 
+    print(
+        f"[backend] Starting Bronze ingestion: {' '.join(cmd)}",
+        flush=True,
+    )
+
     return subprocess.Popen(
         cmd,
         cwd=str(REPO_ROOT),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
     )
