@@ -14,6 +14,8 @@ from urllib.parse import urlparse
 import requests
 
 YOUTUBE_DOMAINS = {"youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com"}
+MILLER_CENTER_DOMAINS = {"millercenter.org", "www.millercenter.org"}
+INTERNET_ARCHIVE_DOMAINS = {"archive.org", "www.archive.org"}
 
 
 def is_youtube_url(location: str) -> bool:
@@ -21,6 +23,27 @@ def is_youtube_url(location: str) -> bool:
         return urlparse(location).netloc.lower() in YOUTUBE_DOMAINS
     except ValueError:
         return False
+    
+    
+def classify_source(location: str, is_local: bool) -> str:
+    """
+    Single source of truth for URL -> adapter routing.
+    Used by both probe() (to preview correctly) and pipeline_runner.py (to trigger the right bronze_ingest.py --source) 
+    Kept in one place so the two never drift out of sync with each other."""
+    if is_local:
+        return "single"
+    try:
+        domain = urlparse(location).netloc.lower()
+    except ValueError:
+        return "single"
+ 
+    if domain in YOUTUBE_DOMAINS:
+        return "youtube"
+    if domain in MILLER_CENTER_DOMAINS:
+        return "miller_center"
+    if domain in INTERNET_ARCHIVE_DOMAINS:
+        return "internet_archive"
+    return "single"
 
 
 def probe(location: str, is_local: bool, content_type: str) -> Dict:
@@ -85,9 +108,6 @@ def _probe_text_url(location: str) -> Dict:
     except requests.RequestException as e:
         return {"ok": False, "warnings": [f"Could not fetch URL: {e}"]}
 
-    # Read only enough of the body to find <title> — this is a preview,
-    # not the real extraction (trafilatura does the real extraction in
-    # silver_ingest.py, on the full downloaded body).
     warnings = []
     title = None
     try:
