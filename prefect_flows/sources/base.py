@@ -11,12 +11,13 @@ from typing import Iterator, Optional
 @dataclass
 class Candidate:
     """One raw file discovered by a source, not yet ingested/downloaded."""
-    source_url: str 
+    source_url: str
     source_type: str
     file_name: str
-    is_local: bool = False 
+    is_local: bool = False
     mime_type: Optional[str] = None
     raw_metadata: Optional[dict] = None  # for RSS feed metadata, YouTube video metadata, ...
+    local_path: Optional[str] = None  # temporary local path for sources that download files during discovery
 
 
 class BaseSource(ABC):
