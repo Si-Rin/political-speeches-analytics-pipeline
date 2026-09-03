@@ -4,14 +4,15 @@ Source adapter: web pages discovered via keyword-based crawling.
 The source starts from seed URL(s) and crawls outward through links (unlike UrlListSource), scoring each page's relevance by keyword match.
 Only pages that clear the relevance bar are yielded as candidates — the crawl itself explores wider than what gets ingested.
 
-Like UrlListSource, discover() only *lists* candidates (source_url = the page URL itself); it does not download page content. 
-checksum_and_stage in the ingestion flow does the actual GET + streaming + hashing later, exactly like it does for direct URL candidates. 
+Like UrlListSource, discover() only *lists* candidates (source_url = the page URL itself); it does not download page content.
+checksum_and_stage in the ingestion flow does the actual GET + streaming + hashing later, exactly like it does for direct URL candidates.
 This adapter fetches pages too, but only to read links/text for crawl decisions — that fetch is throwaway and separate from the one Bronze staging will do.
 
 Bronze stores raw HTML as-is (source_type="text", mime_type="text/html").
 Main-content extraction (stripping nav/ads/boilerplate) is a Silver-layer concern, same as Whisper transcription is for audio/video.
 """
 import hashlib
+import queue
 import time
 from collections import deque
 from typing import Iterator, List, Optional, Set
@@ -91,8 +92,8 @@ class WebCrawlSource(BaseSource):
         slug = parsed.path.strip("/").replace("/", "_") or "index"
         url_hash = hashlib.md5(url.encode("utf-8")).hexdigest()[:8]
         return f"{slug[:60]}_{url_hash}.html"
-    
-    def _is_paginatio_link(self, from_url: str, to_url: str) -> bool:
+
+    def _is_pagination_link(self, from_url: str, to_url: str) -> bool:
         """True if to_url is likely a pagination link from from_url
         Handles two patterns seen across sources:
           - query-string style: ?page=N on the same path (as UCSB)
@@ -168,7 +169,7 @@ class WebCrawlSource(BaseSource):
                     next_url = urljoin(url, a["href"]).split("#")[0]  # strip fragments (extract the base URL for crawling)
                     if next_url in visited or urlparse(next_url).scheme not in ("http", "https"):
                         continue
-                    if self._is_paginatio_link(url, next_url):    
+                    if self._is_pagination_link(url, next_url):
                         queue.append((next_url, depth, url))
-                    if self.max_depth > depth:
+                    elif depth < self.max_depth:
                         queue.append((next_url, depth + 1, url))
