@@ -1,102 +1,159 @@
 """
-Triggers Bronze ingestion for one submitted item, via subprocess, never by importing prefect_flows.bronze_ingest directly.
+Submit Bronze ingestion runs to Prefect Server.
 
-Why subprocess and not a direct function call: bronze_ingest.py imports `from prefect import flow, task, get_run_logger` at module level, which pulls in Prefect's anyio<4.0 pin.
-This backend deliberately does NOT depend on prefect (see backend_requirements.txt) so it can live in a separate venv from prefect_flows/ without a dependency conflict — the whole reason this backend/frontend split exists.
-Importing bronze_ingest here, even just to call one function, would defeat that.
+The FastAPI backend intentionally does not import Prefect or the flow module.
+Instead, it calls the Prefect Server HTTP API and lets the configured Prefect
+worker execute the deployment.
 
-This also makes triggering naturally non-blocking: Popen returns immediately, the actual download/checksum/upload/insert happens in a separate OS process, and the caller (a FastAPI route) returns right away.
-Ingestion progress is observed by polling the DB (see routes/status.py), not by waiting on this subprocess.
+This keeps the backend environment lightweight and preserves the dependency
+separation between the API and the Prefect pipeline.
 """
-import json
+from typing import Any, Dict, Optional
+from urllib.parse import quote
+
 import os
-import subprocess
-import sys
-from pathlib import Path
-from typing import Dict, Optional
+import requests
 
-# Repo root: this file lives in backend/, prefect_flows/ is a sibling dir.
-REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# The interpreter that has prefect_flows/'s own dependencies installed —
-# NOT sys.executable (this backend's own venv doesn't have prefect/spacy/
-# transformers/etc. installed, by design). Override via env var if the
-# pipeline venv lives somewhere non-default. Cross-platform default: venvs
-# put the interpreter at .venv/bin/python on Linux/macOS and
-# .venv/Scripts/python.exe on Windows.
-_default_venv_python = (
-    REPO_ROOT / ".venv" / "Scripts" / "python.exe" if sys.platform == "win32"
-    else REPO_ROOT / ".venv" / "bin" / "python"
-)
-PIPELINE_PYTHON = os.environ.get("PIPELINE_PYTHON", str(_default_venv_python))
+PREFECT_API_URL = os.environ.get("PREFECT_API_URL", "http://localhost:4200/api").rstrip("/")
+PREFECT_FLOW_NAME = os.environ.get("PREFECT_FLOW_NAME", "bronze-ingestion")
+PREFECT_DEPLOYMENT_NAME = os.environ.get("PREFECT_DEPLOYMENT_NAME", "default")
+PREFECT_DEPLOYMENT_ID = os.environ.get("PREFECT_DEPLOYMENT_ID")
+PREFECT_API_TIMEOUT = float(os.environ.get("PREFECT_API_TIMEOUT", "10"))
+
+
+def _prefect_request(method: str, path: str, **kwargs) -> requests.Response:
+    """Call the Prefect Server API with a consistent timeout and error handling."""
+    url = f"{PREFECT_API_URL}{path}"
+    try:
+        response = requests.request(
+            method,
+            url,
+            timeout=PREFECT_API_TIMEOUT,
+            **kwargs,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Could not reach Prefect Server at {PREFECT_API_URL}: {exc}"
+        ) from exc
+
+    if not response.ok:
+        detail = response.text.strip()
+        raise RuntimeError(
+            f"Prefect Server returned HTTP {response.status_code} for {path}"
+            + (f": {detail}" if detail else "")
+        )
+
+    return response
+
+
+def _get_deployment_id() -> str:
+    """Resolve the deployment ID from configuration or its flow/deployment name."""
+    if PREFECT_DEPLOYMENT_ID:
+        return PREFECT_DEPLOYMENT_ID
+
+    flow_name = quote(PREFECT_FLOW_NAME, safe="")
+    deployment_name = quote(PREFECT_DEPLOYMENT_NAME, safe="")
+    response = _prefect_request(
+        "GET",
+        f"/deployments/name/{flow_name}/{deployment_name}",
+    )
+    deployment = response.json()
+
+    deployment_id = deployment.get("id")
+    if not deployment_id:
+        raise RuntimeError(
+            f"Prefect deployment '{PREFECT_FLOW_NAME}/{PREFECT_DEPLOYMENT_NAME}' "
+            "was found but has no deployment ID."
+        )
+
+    return deployment_id
+
+
+def _submit_bronze_flow(parameters: Dict[str, Any]) -> Dict[str, Any]:
+    """Create and return a Prefect flow run for the Bronze deployment."""
+    deployment_id = _get_deployment_id()
+
+    response = _prefect_request(
+        "POST",
+        f"/deployments/{deployment_id}/create_flow_run",
+        json={"parameters": parameters},
+        headers={"Content-Type": "application/json"},
+    )
+
+    return response.json()
 
 
 def trigger_single_item_ingestion(
     location: str,
     is_local: bool,
     content_type: str,
-    is_youtube: bool = False,
+    source_kind: str = "single",
     raw_metadata: Optional[Dict] = None,
-) -> subprocess.Popen:
-    """Fire-and-forget: starts bronze_ingest.py in a separate process and
-    returns immediately (does not wait for it to finish). Routes youtube
-    URLs through --source youtube (required — a plain download won't work
-    on a YouTube watch page), everything else through --source single."""
-    if is_youtube and not is_local:
-        cmd = [
-            PIPELINE_PYTHON, "-m", "prefect_flows.bronze_ingest",
-            "--source", "youtube",
-            "--urls", location,
-            "--audio-only" if content_type == "audio" else "",
-        ]
-    else:
-        cmd = [
-            PIPELINE_PYTHON, "-m", "prefect_flows.bronze_ingest",
-            "--source", "single",
-            "--location", location,
-            "--type", content_type,
-        ]
-        if is_local:
-            cmd.append("--is-local")
-        if raw_metadata:
-            cmd += ["--raw-metadata", json.dumps(raw_metadata)]
+) -> Dict[str, Any]:
+    """Submit one Bronze ingestion run to Prefect.
 
+    ``source_kind`` is produced by ``classify_source()`` and maps directly to
+    the corresponding source adapter in ``prefect_flows/bronze_ingest.py``.
+    """
+    if source_kind == "youtube":
+        parameters = {
+            "source_name": "youtube",
+            "urls": [location],
+            "audio_only": content_type == "audio",
+            "playlist_mode": False,
+            "max_downloads": None,
+        }
+    elif source_kind == "miller_center":
+        parameters = {
+            "source_name": "miller_center",
+            "urls": [location],
+            "start_url": None,
+            "max_depth": 100,
+        }
+    elif source_kind == "internet_archive":
+        parameters = {
+            "source_name": "internet_archive",
+            "urls": [location],
+            "excluded_indices": {},
+        }
+    else:
+        parameters = {
+            "source_name": "single",
+            "location": location,
+            "content_type": content_type,
+            "is_local": is_local,
+            "raw_metadata": raw_metadata,
+        }
+
+    run = _submit_bronze_flow(parameters)
     print(
-        f"[backend] Starting Bronze ingestion: {' '.join(cmd)}",
+        f"[backend] Submitted Bronze flow run: flow_run_id={run.get('id')}",
         flush=True,
     )
+    return run
 
-    return subprocess.Popen(
-        cmd,
-        cwd=str(REPO_ROOT),
-    )
 
 def trigger_crawl(
-    seed_urls,
-    keywords,
-    allowed_domains=None,
-    max_depth=2,
-    max_pages=50,
-) -> subprocess.Popen:
-    """Fire-and-forget: starts a keyword-based web crawl (WebCrawlSource, --source web_crawl) in a separate process.
-    Unlike trigger_single_item_ingestion, this can discover many documents over several minutes (up to max_pages)
-    The caller should not expect a doc_id back; watch History for new rows appearing over time instead.
-    """
-    cmd = [
-    PIPELINE_PYTHON,
-    "-m",
-    "prefect_flows.bronze_ingest",
-    "--source", "web_crawl",
-    "--seed-urls", *seed_urls,
-    "--keywords", *keywords,
-    "--max-depth", str(max_depth),
-    "--max-pages", str(max_pages),
-    "--allowed-domains", *allowed_domains,
-    ]
+    seed_urls: list,
+    keywords: list,
+    allowed_domains: Optional[list] = None,
+    max_depth: Optional[int] = None,
+    max_pages: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Submit a keyword-based web crawl to the Bronze Prefect deployment."""
+    parameters = {
+        "source_name": "web_crawl",
+        "seed_urls": seed_urls,
+        "keywords": keywords,
+        "allowed_domains": allowed_domains,
+        "max_depth": 2 if max_depth is None else max_depth,
+        "max_pages": 50 if max_pages is None else max_pages,
+    }
 
-    return subprocess.Popen(
-        cmd,
-        cwd=str(REPO_ROOT),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+    run = _submit_bronze_flow(parameters)
+    print(
+        f"[backend] Submitted Bronze crawl run: flow_run_id={run.get('id')}",
+        flush=True,
     )
+    return run
