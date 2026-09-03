@@ -87,7 +87,7 @@ services:
     command: >
       /bin/sh -c "
       prefect work-pool create default-pool --type process || true &&
-      prefect --prompt=false deploy prefect_flows/bronze_ingest.py:ingest_bronze --name default --pool default-pool --work-queue default"
+      prefect --no-prompt deploy prefect_flows/bronze_ingest.py:ingest_bronze --name default --pool default-pool --work-queue default"
     volumes:
       - .:/app
 
