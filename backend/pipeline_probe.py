@@ -23,12 +23,12 @@ def is_youtube_url(location: str) -> bool:
         return urlparse(location).netloc.lower() in YOUTUBE_DOMAINS
     except ValueError:
         return False
-    
-    
+
+
 def classify_source(location: str, is_local: bool) -> str:
     """
     Single source of truth for URL -> adapter routing.
-    Used by both probe() (to preview correctly) and pipeline_runner.py (to trigger the right bronze_ingest.py --source) 
+    Used by both probe() (to preview correctly) and pipeline_runner.py (to trigger the right bronze_ingest.py --source)
     Kept in one place so the two never drift out of sync with each other."""
     if is_local:
         return "single"
@@ -36,7 +36,7 @@ def classify_source(location: str, is_local: bool) -> str:
         domain = urlparse(location).netloc.lower()
     except ValueError:
         return "single"
- 
+
     if domain in YOUTUBE_DOMAINS:
         return "youtube"
     if domain in MILLER_CENTER_DOMAINS:
@@ -47,15 +47,16 @@ def classify_source(location: str, is_local: bool) -> str:
 
 
 def probe(location: str, is_local: bool, content_type: str) -> Dict:
-    """Returns a dict matching schemas.ProbeResponse's fields (as a plain
-    dict, not the model itself, so this module has no FastAPI/pydantic
-    dependency)."""
-    if is_local:
+    """Returns a dict matching schemas.ProbeResponse's fields (so this module has no FastAPI/pydantic dependency)."""
+    source_type = classify_source(location, is_local)
+
+    if source_type == "single" and is_local:
         return _probe_local(location)
-    if is_youtube_url(location):
+    if source_type == "youtube":
         return _probe_youtube(location)
     if content_type == "text":
         return _probe_text_url(location)
+
     return _probe_direct_url(location)
 
 
