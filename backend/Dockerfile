@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
 
 COPY backend/requirements.txt .
 
-RUN pip install --no-cache-dir -r backend/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend ./backend
 COPY prefect_flows ./prefect_flows
