@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st
 
-from api_client import probe_source, submit_source
+from api_client import probe_source, submit_source, trigger_crawl
 
 st.set_page_config(layout="wide")
 
