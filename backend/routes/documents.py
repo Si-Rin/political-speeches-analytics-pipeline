@@ -44,9 +44,9 @@ def submit_source(req: SubmitRequest):
 
     The speaker is deliberately not part of SubmitRequest: this API owns the project-level invariant that every collected speech belongs to Donald Trump.
     """
-    
+
     source_kind = classify_source(req.location, req.is_local)
-    
+
     raw_metadata = dict(req.raw_metadata or {})
     user_provided = {
         k: v for k, v in {
@@ -58,7 +58,7 @@ def submit_source(req: SubmitRequest):
     }
     if user_provided:
         raw_metadata["user_provided"] = user_provided
- 
+
     trigger_single_item_ingestion(
         location=req.location,
         is_local=req.is_local,
@@ -72,21 +72,21 @@ def submit_source(req: SubmitRequest):
                 "moment for the document to appear (longer for video/audio).",
         location=req.location,
     )
-    
-    
+
+
 @router.post("/documents/crawl", response_model=CrawlResponse)
 def crawl_sources(req: CrawlRequest):
     """
-    Triggers a keyword-based web crawl (WebCrawlSource) — discovers and ingests every page that clears the keyword relevance bar, starting from seed_urls. 
-    Distinct from /documents/submit: this can surface many documents over several minutes, not one. 
+    Triggers a keyword-based web crawl (WebCrawlSource) — discovers and ingests every page that clears the keyword relevance bar, starting from seed_urls.
+    Distinct from /documents/submit: this can surface many documents over several minutes, not one.
     See pipeline_runner.py for why WebCrawlSource/UcsbTweetsSource-style crawlers were kept separate from the single-item routing in classify_source().
     """
     trigger_crawl(
         seed_urls=req.seed_urls,
         keywords=req.keywords,
         allowed_domains=req.allowed_domains,
-        max_depth=req.max_depth,
-        max_pages=req.max_pages,
+        max_depth=req.max_depth if req.max_depth is not None else 2,
+        max_pages=req.max_pages if req.max_pages is not None else 50,
     )
     return CrawlResponse(
         accepted=True,
@@ -114,12 +114,12 @@ def get_history(limit: int = 100, source_type: Optional[str] = None):
                 params.append(source_type)
             query += " ORDER BY b.ingestion_date DESC LIMIT %s"
             params.append(limit)
- 
+
             cur.execute(query, params)
             rows = cur.fetchall()
     finally:
         conn.close()
- 
+
     documents = []
     for r in rows:
         (doc_id, source_url, file_name, source_type_,
@@ -134,10 +134,10 @@ def get_history(limit: int = 100, source_type: Optional[str] = None):
             ingestion_date=ingestion_date,
             silver_status=status_processing or "not_started",
         ))
- 
+
     return DocumentHistoryResponse(documents=documents)
- 
- 
+
+
 @router.get("/documents/{doc_id}", response_model=DocumentSummary)
 def get_document(doc_id: int):
     conn = get_postgres_connection()
@@ -157,10 +157,10 @@ def get_document(doc_id: int):
             row = cur.fetchone()
     finally:
         conn.close()
- 
+
     if row is None:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
- 
+
     (doc_id, source_url, file_name, source_type_,
      ingestion_date, title, speaker, publication_date, status_processing) = row
     return DocumentSummary(
