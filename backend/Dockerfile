@@ -6,9 +6,9 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-COPY backend_requirements.txt .
+COPY backend/requirements.txt .
 
-RUN pip install --no-cache-dir -r backend_requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt
 
 COPY backend ./backend
 COPY prefect_flows ./prefect_flows
