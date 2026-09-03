@@ -87,7 +87,7 @@ services:
     command: >
       /bin/sh -c "
       prefect work-pool create default-pool --type process || true &&
-      prefect --no-prompt deploy prefect_flows/bronze_ingest.py:ingest_bronze --name default --pool default-pool --work-queue default"
+      prefect --prompt=false deploy prefect_flows/bronze_ingest.py:ingest_bronze --name default --pool default-pool --work-queue default"
     volumes:
       - .:/app
 
@@ -116,6 +116,53 @@ services:
     command: prefect worker start --pool default-pool
     volumes:
       - .:/app
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: political-speeches-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prefect-server:
+        condition: service_healthy
+      prefect-deploy:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PREFECT_API_URL: http://prefect-server:4200/api
+      PREFECT_FLOW_NAME: bronze-ingestion
+      PREFECT_DEPLOYMENT_NAME: default
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: political-speeches-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://backend:8000
+    ports:
+      - "8501:8501"
 
 volumes:
   minio_data:
