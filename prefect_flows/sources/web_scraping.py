@@ -12,7 +12,6 @@ Bronze stores raw HTML as-is (source_type="text", mime_type="text/html").
 Main-content extraction (stripping nav/ads/boilerplate) is a Silver-layer concern, same as Whisper transcription is for audio/video.
 """
 import hashlib
-import queue
 import time
 from collections import deque
 from typing import Iterator, List, Optional, Set
@@ -54,7 +53,7 @@ class WebCrawlSource(BaseSource):
         """
         self.seed_urls = seed_urls
         self.keywords = [k.lower() for k in keywords]
-        self.allowed_domains = set(allowed_domains) if allowed_domains else None
+        self.allowed_domains = {self._normalize_domain(d) for d in allowed_domains} if allowed_domains else None
         self.max_depth = max_depth
         self.max_pages = max_pages
         self.keyword_threshold = keyword_threshold
@@ -63,18 +62,26 @@ class WebCrawlSource(BaseSource):
         self.request_timeout = request_timeout
         self._robots_cache: dict[str, RobotFileParser] = {}
 
+    def _normalize_domain(self, value: str) -> str:
+        value = value.strip().lower()
+        if "://" in value:
+            value = urlparse(value).hostname or ""
+        else:
+            value = value.split(":", 1)[0]
+
+        return value.removeprefix("www.")
+
     def _domain_allowed(self, url: str) -> bool:
         parsed = urlparse(url)
-        domain = parsed.netloc
+        domain = self._normalize_domain(parsed.hostname or "")
         return self.allowed_domains is None or domain in self.allowed_domains
-
     def _robots_allowed(self, url: str) -> bool:
         """
         Verifies the robots.txt rules for the given URL and user agent. Caches RobotFileParser instances per domain to avoid repeated network requests.
         RobotFileParser is a class that parses the robots.txt file to determine if the user agent is allowed to fetch the URL.
         """
         parsed = urlparse(url)
-        domain = parsed.netloc
+        domain = self._normalize_domain(parsed.hostname or "")
         if domain not in self._robots_cache:
             rp = RobotFileParser()
             rp.set_url(f"{parsed.scheme}://{domain}/robots.txt")
@@ -100,9 +107,15 @@ class WebCrawlSource(BaseSource):
           - path style: /page/N/ appended to the same base path (WordPress-based sites like whitehouse.gov)
         Pagination links are followed regardless of max_depth — they're traversal, not content, and don't get yielded as candidates
         """
-        from_parsed, to_parsed = urlparse(from_url), urlparse(to_url)
-        if from_parsed.netloc != to_parsed.netloc:          # netloc returns the domain name and port (if any) of the URL, so if they differ, it's not a pagination link
+        from_parsed = urlparse(from_url)
+        to_parsed = urlparse(to_url)
+
+        from_domain = self._normalize_domain(from_parsed.hostname or "")
+        to_domain = self._normalize_domain(to_parsed.hostname or "")
+
+        if from_domain != to_domain:
             return False
+
         if "page" in parse_qs(to_parsed.query):                  # if the query string contains a "page" parameter, it's likely a pagination link
             return from_parsed.path == to_parsed.path
         if re.search(r"/page/\d+/?$", to_parsed.path):          # if the path ends with /page/N/
@@ -166,10 +179,12 @@ class WebCrawlSource(BaseSource):
 
             if depth < self.max_depth:
                 for a in soup.find_all("a", href=True):
-                    next_url = urljoin(url, a["href"]).split("#")[0]  # strip fragments (extract the base URL for crawling)
+                    next_url = urljoin(url, a["href"]).split("#")[0]
+
                     if next_url in visited or urlparse(next_url).scheme not in ("http", "https"):
                         continue
+
                     if self._is_pagination_link(url, next_url):
                         queue.append((next_url, depth, url))
-                    elif depth < self.max_depth:
+                    else:
                         queue.append((next_url, depth + 1, url))
