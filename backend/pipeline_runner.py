@@ -1,8 +1,8 @@
 """
 Triggers Bronze ingestion for one submitted item, via subprocess, never by importing prefect_flows.bronze_ingest directly.
 
-Why subprocess and not a direct function call: bronze_ingest.py imports `from prefect import flow, task, get_run_logger` at module level, which pulls in Prefect's anyio<4.0 pin. 
-This backend deliberately does NOT depend on prefect (see backend_requirements.txt) so it can live in a separate venv from prefect_flows/ without a dependency conflict — the whole reason this backend/frontend split exists. 
+Why subprocess and not a direct function call: bronze_ingest.py imports `from prefect import flow, task, get_run_logger` at module level, which pulls in Prefect's anyio<4.0 pin.
+This backend deliberately does NOT depend on prefect (see backend_requirements.txt) so it can live in a separate venv from prefect_flows/ without a dependency conflict — the whole reason this backend/frontend split exists.
 Importing bronze_ingest here, even just to call one function, would defeat that.
 
 This also makes triggering naturally non-blocking: Popen returns immediately, the actual download/checksum/upload/insert happens in a separate OS process, and the caller (a FastAPI route) returns right away.
@@ -70,7 +70,7 @@ def trigger_single_item_ingestion(
         cmd,
         cwd=str(REPO_ROOT),
     )
-    
+
 def trigger_crawl(
     seed_urls: list,
     keywords: list,
@@ -78,7 +78,7 @@ def trigger_crawl(
     max_depth: Optional[int] = None,
     max_pages: Optional[int] = None,
 ) -> subprocess.Popen:
-    """Fire-and-forget: starts a keyword-based web crawl (WebCrawlSource, --source web_crawl) in a separate process. 
+    """Fire-and-forget: starts a keyword-based web crawl (WebCrawlSource, --source web_crawl) in a separate process.
     Unlike trigger_single_item_ingestion, this can discover many documents over several minutes (up to max_pages)
     The caller should not expect a doc_id back; watch History for new rows appearing over time instead.
     """
@@ -94,11 +94,10 @@ def trigger_crawl(
         cmd += ["--max-depth", str(max_depth)]
     if max_pages is not None:
         cmd += ["--max-pages", str(max_pages)]
- 
+
     return subprocess.Popen(
         cmd,
         cwd=str(REPO_ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
- 

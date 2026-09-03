@@ -50,7 +50,7 @@ class SubmitRequest(BaseModel):
 class SubmitResponse(BaseModel):
     accepted: bool
     message: str
-    # No doc_id, bronze_ingest.py runs out-of-process (subprocess) and only assigns a doc_id once the download/checksum/insert completes — see pipeline_runner.py. 
+    # No doc_id, bronze_ingest.py runs out-of-process (subprocess) and only assigns a doc_id once the download/checksum/insert completes — see pipeline_runner.py.
     # Poll GET /documents (filtered by `location`) or GET /documents/history to see it land.
     location: str
 
@@ -62,15 +62,15 @@ class CrawlRequest(BaseModel):
     seed_urls: List[str] = Field(..., min_length=1)
     keywords: List[str] = Field(..., min_length=1)
     allowed_domains: Optional[List[str]] = None
-    max_depth: Optional[int] = None  # bronze_ingest.py default: 100
-    max_pages: Optional[int] = None  # bronze_ingest.py default: 50
- 
- 
+    max_depth: Optional[int] = Field(default=None, ge=2, le=5)
+    max_pages: Optional[int] = Field(default=None, ge=1, le=500)
+
+
 class CrawlResponse(BaseModel):
     accepted: bool
     message: str
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # History
 # ---------------------------------------------------------------------------

@@ -30,7 +30,7 @@ if mode == "Submit a document":
         st.session_state.probe_result = None
     if "probed_for" not in st.session_state:
         st.session_state.probed_for = None
- 
+
     with st.form("add_source_form"):
         source_kind = st.radio("Source", ["URL", "Local path"], horizontal=True)
         location = st.text_input(
@@ -39,7 +39,7 @@ if mode == "Submit a document":
         )
         content_type = st.radio("Content type", ["text", "video", "audio"], horizontal=True)
         detect_clicked = st.form_submit_button("Detect")
- 
+
     if detect_clicked:
         if not location.strip():
             st.warning("Enter a URL or local path first.")
@@ -51,10 +51,10 @@ if mode == "Submit a document":
             st.session_state.probed_for = {
                 "location": location.strip(), "is_local": is_local, "content_type": content_type,
             }
- 
+
     result = st.session_state.probe_result
     probed_for = st.session_state.probed_for
- 
+
     if result is not None:
         st.subheader("Detected information")
         if not result.get("ok"):
@@ -65,17 +65,17 @@ if mode == "Submit a document":
             cols[0].metric("Title", result.get("detected_title") or "—")
             cols[1].metric("File name", result.get("detected_file_name") or "—")
             cols[2].metric("MIME type", result.get("detected_mime_type") or "—")
- 
+
             cols2 = st.columns(3)
             size = result.get("detected_size_bytes")
             cols2[0].metric("Size", f"{size / 1_000_000:.1f} MB" if size else "—")
             duration = result.get("detected_duration_seconds")
             cols2[1].metric("Duration", f"{duration / 60:.1f} min" if duration else "—")
             cols2[2].metric("Uploader", result.get("detected_uploader") or "—")
- 
+
             for w in result.get("warnings", []):
                 st.warning(w)
- 
+
             if st.button("Confirm & submit", type="primary"):
                 with st.spinner("Starting ingestion..."):
                     submit_result = submit_source(
@@ -90,13 +90,13 @@ if mode == "Submit a document":
                     st.session_state.probed_for = None
                 else:
                     st.error("Submission failed.")
- 
+
     st.divider()
     st.subheader("Available sources")
     st.markdown("""
 Paste a URL or local path above — the right source is picked automatically,
 no need to select it:
- 
+
 | Source | How it's detected | Notes |
 |---|---|---|
 | **YouTube** | `youtube.com` / `youtu.be` links | Title, duration, uploader pulled via yt-dlp |
@@ -104,12 +104,12 @@ no need to select it:
 | **Internet Archive (TV News)** | `archive.org` links | Always ingested as audio — the content type above is ignored for this source |
 | **Direct file link** | any other URL | Uses the content type selected above |
 | **Local file** | a path on this machine | Uses the content type selected above |
- 
+
 Need to discover several documents at once instead of one? Switch to
 **Crawl for documents** above. *Not available from either mode yet —
 command-line only:* syncing the UCSB tweets archive.
 """)
- 
+
 # ---------------------------------------------------------------------------
 # Mode: Crawl for documents
 # ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ else:
         "surface several documents — no single \"detected info\" review "
         "step here. Watch History for new rows as they're found."
     )
- 
+
     with st.form("crawl_form"):
         seed_urls_raw = st.text_area(
             "Seed URL(s)", placeholder="https://example.com/speeches\nhttps://example.com/press-releases",
@@ -137,14 +137,14 @@ else:
         col1, col2 = st.columns(2)
         max_depth = col1.number_input("Max depth", min_value=1, value=2, step=1)
         max_pages = col2.number_input("Max pages", min_value=1, value=50, step=1)
- 
+
         crawl_clicked = st.form_submit_button("Start crawl", type="primary")
- 
+
     if crawl_clicked:
         seed_urls = [u.strip() for u in seed_urls_raw.splitlines() if u.strip()]
         keywords = [k.strip() for k in keywords_raw.splitlines() if k.strip()]
         allowed_domains = [d.strip() for d in allowed_domains_raw.split(",") if d.strip()] or None
- 
+
         if not seed_urls or not keywords:
             st.warning("At least one seed URL and one keyword are required.")
         else:
@@ -158,4 +158,3 @@ else:
                 st.success(crawl_result["message"])
             else:
                 st.error("Could not start the crawl.")
- 

@@ -1,5 +1,5 @@
 """
-Thin wrapper around the backend API 
+Thin wrapper around the backend API
 
 Keeps `requests` calls and error handling out of the page files.
 """
@@ -48,7 +48,7 @@ def submit_source(
     content_type: str,
     raw_metadata: Optional[Dict],
     title: Optional[str] = None,
-    publication_date=None, 
+    publication_date=None,
     language: Optional[str] = None,
     notes: Optional[str] = None,
 ) -> Optional[Dict]:
@@ -64,7 +64,7 @@ def submit_source(
     if notes is not None:
         body["notes"] = notes
     return _post("/documents/submit", body)
- 
+
 
 def trigger_crawl(
     seed_urls: List[str],
@@ -80,7 +80,7 @@ def trigger_crawl(
         "max_depth": max_depth,
         "max_pages": max_pages,
     })
-    
+
 
 def get_history(source_type: Optional[str] = None, limit: int = 100) -> List[Dict]:
     params = {"limit": limit}
@@ -88,12 +88,12 @@ def get_history(source_type: Optional[str] = None, limit: int = 100) -> List[Dic
         params["source_type"] = source_type
     result = _get("/documents/history", **params)
     return result["documents"] if result else []
- 
- 
+
+
 def get_all_statuses(limit: int = 100) -> List[Dict]:
     result = _get("/status", limit=limit)
     return result["statuses"] if result else []
- 
- 
+
+
 def get_status(doc_id: int) -> Optional[Dict]:
     return _get(f"/status/{doc_id}")
