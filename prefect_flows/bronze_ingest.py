@@ -267,7 +267,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed-urls", nargs="+", help="Seed URLs for web crawl (required for --source web_crawl)")
     parser.add_argument("--keywords", nargs="+", help="Keywords for web crawl (required for --source web_crawl)")
     parser.add_argument("--allowed-domains", nargs="+", help="Allowed domains for web crawl (optional for --source web_crawl)")
-    parser.add_argument("--max-depth", type=int, default=100, help="Maximum depth for web crawl and miller center (optional for --source web_crawl and --source miller_center)")
+    parser.add_argument("--max-depth", type=int, default=2, help="Maximum depth for web crawl and miller center (optional for --source web_crawl and --source miller_center)")
     parser.add_argument("--max-pages", type=int, default=50, help="Maximum pages for web crawl (optional for --source web_crawl)")
     parser.add_argument("--listing-url", help="President's document listing page (required for --source ucsb_tweets)")
     parser.add_argument("--max-documents", type=int, default=1, help="Max tweet-day documents to yield for --source ucsb_tweets")
