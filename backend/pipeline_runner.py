@@ -72,28 +72,27 @@ def trigger_single_item_ingestion(
     )
 
 def trigger_crawl(
-    seed_urls: list,
-    keywords: list,
-    allowed_domains: Optional[list] = None,
-    max_depth: Optional[int] = None,
-    max_pages: Optional[int] = None,
+    seed_urls,
+    keywords,
+    allowed_domains=None,
+    max_depth=2,
+    max_pages=50,
 ) -> subprocess.Popen:
     """Fire-and-forget: starts a keyword-based web crawl (WebCrawlSource, --source web_crawl) in a separate process.
     Unlike trigger_single_item_ingestion, this can discover many documents over several minutes (up to max_pages)
     The caller should not expect a doc_id back; watch History for new rows appearing over time instead.
     """
     cmd = [
-        PIPELINE_PYTHON, "-m", "prefect_flows.bronze_ingest",
-        "--source", "web_crawl",
-        "--seed-urls", *seed_urls,
-        "--keywords", *keywords,
+    PIPELINE_PYTHON,
+    "-m",
+    "prefect_flows.bronze_ingest",
+    "--source", "web_crawl",
+    "--seed-urls", *seed_urls,
+    "--keywords", *keywords,
+    "--max-depth", str(max_depth),
+    "--max-pages", str(max_pages),
+    "--allowed-domains", *allowed_domains,
     ]
-    if allowed_domains:
-        cmd += ["--allowed-domains", *allowed_domains]
-    if max_depth is not None:
-        cmd += ["--max-depth", str(max_depth)]
-    if max_pages is not None:
-        cmd += ["--max-pages", str(max_pages)]
 
     return subprocess.Popen(
         cmd,
