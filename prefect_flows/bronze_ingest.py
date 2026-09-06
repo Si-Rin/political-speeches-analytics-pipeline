@@ -17,6 +17,7 @@ Usage:
     python prefect_flows/bronze_ingest.py --source miller_center --start-url https://millercenter.org/president/kennedy/speeches
     python prefect_flows/bronze_ingest.py --source miller_center --urls https://millercenter.org/president/kennedy/speeches https://millercenter.org/president/johnson/speeches
     python prefect_flows/bronze_ingest.py --source web_crawl --seed-urls https://example.com --keywords "politics" "speech" --allowed-domains example.com
+    python prefect_flows/bronze_ingest.py --source ucsb --listing-url https://www.presidency.ucsb.edu/people/president/donald-j-trump-1st-term --max-documents 100
 """
 import argparse
 import hashlib
@@ -43,7 +44,7 @@ from prefect_flows.sources.local_folder import LocalFolderSource
 from prefect_flows.sources.youtube import YoutubeSource
 from prefect_flows.sources.miller_center import MillerCenterSource
 from prefect_flows.sources.web_scraping import WebCrawlSource
-from prefect_flows.sources.ucsb_tweets import UcsbTweetsSource
+from prefect_flows.sources.ucsb import UcsbSource
 
 load_dotenv()
 
@@ -78,8 +79,8 @@ def discover(source_name: str, **source_kwargs) -> list[Candidate]:
             crawl_delay=source_kwargs.get("crawl_delay", 5.0),
             request_timeout=source_kwargs.get("request_timeout", 10.0),
         )
-    elif source_name == "ucsb_tweets":
-        source = UcsbTweetsSource(
+    elif source_name == "ucsb":
+        source = UcsbSource(
             listing_url=source_kwargs.get("listing_url"),
             link_text_filter=source_kwargs.get("link_text_filter", "tweets of"),
             max_documents=source_kwargs.get("max_documents", 1),
@@ -255,7 +256,7 @@ def ingest_bronze(source_name: str, **source_kwargs):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--source", required=True, choices=["local", "miller_center", "youtube", "web_crawl", "ucsb_tweets", "internet_archive"], help="Source adapter to use for discovery")
+    parser.add_argument("--source", required=True, choices=["local", "miller_center", "youtube", "web_crawl", "ucsb", "internet_archive"], help="Source adapter to use for discovery")
     parser.add_argument("--folder", help="Folder path (required for --source local)")
     parser.add_argument("--url-file", help="Text file, one URL per line (alternative to --urls)")
     parser.add_argument("--urls", nargs="+", help="One or more URLs directly on the command line")
@@ -269,9 +270,9 @@ if __name__ == "__main__":
     parser.add_argument("--allowed-domains", nargs="+", help="Allowed domains for web crawl (optional for --source web_crawl)")
     parser.add_argument("--max-depth", type=int, default=2, help="Maximum depth for web crawl and miller center (optional for --source web_crawl and --source miller_center)")
     parser.add_argument("--max-pages", type=int, default=50, help="Maximum pages for web crawl (optional for --source web_crawl)")
-    parser.add_argument("--listing-url", help="President's document listing page (required for --source ucsb_tweets)")
-    parser.add_argument("--max-documents", type=int, default=1, help="Max tweet-day documents to yield for --source ucsb_tweets")
-    parser.add_argument("--link-text-filter", default="tweets of", help="Anchor-text substring filter for --source ucsb_tweets")
+    parser.add_argument("--listing-url", help="President's document listing page (required for --source ucsb)")
+    parser.add_argument("--max-documents", type=int, default=1, help="Max day documents to yield for --source ucsb")
+    parser.add_argument("--link-text-filter", default="tweets of", help="Anchor-text substring filter for --source ucsb")
     parser.add_argument("--excluded-indices", help="JSON file: {identifier: [idx, ...]} for --source internet_archive")
     parser.add_argument("--is-local", action="store_true", help="For --source single: --location is a local file path, not a URL")
     parser.add_argument("--raw-metadata", help="JSON string of probe-detected metadata to attach, for --source single")
@@ -317,11 +318,11 @@ if __name__ == "__main__":
             urls=args.urls,
             max_depth=args.max_depth
         )
-    elif args.source == "ucsb_tweets":
+    elif args.source == "ucsb":
         if not args.listing_url:
-            parser.error("--listing-url is required for --source ucsb_tweets")
+            parser.error("--listing-url is required for --source ucsb")
         ingest_bronze(
-            source_name="ucsb_tweets",
+            source_name="ucsb",
             listing_url=args.listing_url,
             link_text_filter=args.link_text_filter,
             max_documents=args.max_documents,

@@ -26,7 +26,7 @@ This project automates the main stages of the data lifecycle:
                           │ URLs / web pages      │
                           │ YouTube               │
                           │ Miller Center         │
-                          │ UCSB tweet archives   │
+                          │ UCSB archives   │
                           │ Internet Archive      │
                           └──────────┬───────────┘
                                      │
@@ -118,7 +118,7 @@ The Bronze ingestion flow currently exposes adapters for:
 - Direct URLs
 - YouTube
 - Miller Center
-- UCSB tweet/document archives
+- UCSB document archives
 - Internet Archive
 - Generic web crawling
 
@@ -151,7 +151,7 @@ The source adapters are implemented under `prefect_flows/sources/` and provide a
 │   │   ├── internet_archive.py
 │   │   ├── local_folder.py
 │   │   ├── miller_center.py
-│   │   ├── ucsb_tweets.py
+│   │   ├── ucsb.py
 │   │   ├── url_s.py
 │   │   ├── web_scraping.py
 │   │   └── youtube.py

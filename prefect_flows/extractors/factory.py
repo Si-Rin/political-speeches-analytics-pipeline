@@ -3,7 +3,7 @@ from prefect_flows.extractors.base import BaseExtractor
 from prefect_flows.extractors.generic_html import GenericHtmlExtractor
 from prefect_flows.extractors.internet_archive import InternetArchiveExtractor
 from prefect_flows.extractors.miller_center import MillerCenterExtractor
-from prefect_flows.extractors.ucsb_extractor import UcsbTweetsExtractor
+from prefect_flows.extractors.ucsb_extractor import UcsbExtractor
 
 
 def get_extractor(source_type: str, raw_metadata: dict) -> BaseExtractor:
@@ -13,6 +13,6 @@ def get_extractor(source_type: str, raw_metadata: dict) -> BaseExtractor:
         return AudioVideoExtractor()
     if raw_metadata.get("source_name") == "miller_center":
         return MillerCenterExtractor()
-    if raw_metadata.get("source_name") == "ucsb_tweets":
-        return UcsbTweetsExtractor()
+    if raw_metadata.get("source_name") == "ucsb":
+        return UcsbExtractor()
     return GenericHtmlExtractor()
