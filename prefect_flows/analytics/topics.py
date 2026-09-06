@@ -9,6 +9,7 @@ BERTopic represents every topic by its own c-TF-IDF top terms
 from typing import Dict, List
 
 from bertopic import BERTopic
+from sklearn.feature_extraction.text import CountVectorizer
 
 from prefect_flows.analytics.embeddings import embed_documents
 
@@ -48,9 +49,14 @@ def fit_topics(doc_ids: List[int], texts: List[str]) -> Dict[int, dict]:
 
     embeddings = embed_documents(texts)
 
+    # ngram_range=(1, 2) enables one-word and two-word keywords extraction
+    # min_df=2 drops n-grams that appear in only one document
+    vectorizer_model = CountVectorizer(stop_words="english", ngram_range=(1, 2), min_df=2)
+
     topic_model = BERTopic(
         min_topic_size=MIN_TOPIC_SIZE,
         calculate_probabilities=True,
+        vectorizer_model=vectorizer_model,
         verbose=False,
     )
     topic_ids, probabilities = topic_model.fit_transform(texts, embeddings=embeddings)
@@ -63,8 +69,6 @@ def fit_topics(doc_ids: List[int], texts: List[str]) -> Dict[int, dict]:
         else:
             keywords = [word for word, _score in topic_model.get_topic(topic_id)[:TOP_N_KEYWORDS]]
             prob_row = probabilities[i]
-            # calculate_probabilities=True can return either a full per-topic distribution (index into it) or a single scalar (the assigned topic's own probability)
-            # depending on the HDBSCAN backend in use — handle both
             probability = float(prob_row[topic_id]) if hasattr(prob_row, "__len__") else float(prob_row)
 
         results[doc_id] = {

@@ -37,7 +37,7 @@ def embed_document(text: str) -> np.ndarray:
     # underlying HF transformer — used by chunk_text as a fallback if the tokenizer itself doesn't report a usable model_max_length
     auto_model = model._first_module().auto_model
 
-    chunks = chunk_text(text=text, tokenizer=tokenizer, model=auto_model)
+    chunks = chunk_text(text=text, tokenizer=tokenizer, model=auto_model, max_length=model.max_seq_length)
     if not chunks:
         return np.zeros(model.get_sentence_embedding_dimension())
 
