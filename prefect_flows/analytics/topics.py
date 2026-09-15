@@ -9,6 +9,7 @@ BERTopic represents every topic by its own c-TF-IDF top terms
 from typing import Dict, List
 
 from bertopic import BERTopic
+from umap import UMAP
 from sklearn.feature_extraction.text import CountVectorizer
 
 from prefect_flows.analytics.embeddings import embed_documents
@@ -53,7 +54,11 @@ def fit_topics(doc_ids: List[int], texts: List[str]) -> Dict[int, dict]:
     # min_df=2 drops n-grams that appear in only one document
     vectorizer_model = CountVectorizer(stop_words="english", ngram_range=(1, 2), min_df=2)
 
+    # Seeding umap (dimentionality reduction technique) for reproducibility
+    umap_model = UMAP(random_state=42)
+
     topic_model = BERTopic(
+        umap_model=umap_model,
         min_topic_size=MIN_TOPIC_SIZE,
         calculate_probabilities=True,
         vectorizer_model=vectorizer_model,
