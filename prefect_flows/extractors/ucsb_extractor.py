@@ -1,30 +1,14 @@
 """
-Content Extractor: UCSB "Tweets of <date>" (1st term) and "Truth Social
-Posts of <date>" (2nd term) compilation pages — Trump switched platforms
-between terms, so UCSB compiles each under a different title and a
-different table row layout. One class, dispatching internally on
-raw_metadata["source_name"] ("ucsb_tweets" vs "ucsb_truths"), since
-title/pub_date extraction is IDENTICAL between the two formats and only
-extract_content's row-parsing differs.
+Content Extractor: UCSB "Tweets of <date>" (1st term) and "Truth Social Posts of <date>" (2nd term) compilation pages — Trump switched platforms between terms, so UCSB compiles each under a different title and a different table row layout.
 
-- ucsb_tweets pages: flat 2-cell rows (timestamp, content ending in
-  "Retweets: N" / "Favorites: N" labels). Retweets matched via
-  RT_PATTERN, which handles "RT @user: text" (2016+) and bare pre-2016
-  "@user: text" quote-style retweets.
-- ucsb_truths pages: PAIRED rows — a 2-cell content row (timestamp,
-  one-or-more <p> text) immediately followed by a 1-cell permalink row.
-  No Retweets:/Favorites: labels at all. Reposts ("ReTruths") have no
-  text prefix to match on, so they're identified via the permalink's
-  handle (truthsocial.com/@<handle>/posts/...) instead — confirmed
-  against a real sample day containing an actual repost (permalink
-  pointed to @DonaldTrumpLiveNews, not @realDonaldTrump).
+FORMAT DETECTION IS STRUCTURAL, NOT METADATA-BASED: which parser to use is decided by inspecting the table's row shape :
 
-Both formats: link-only entries (bare URL, no real words) are excluded,
-and @mentions/URLs are stripped from the final content regardless of
-where in the text they appear — a bare handle or link isn't
-natural-language rhetoric, and previously slipped through when only the
-retweet PREFIX was checked (see git history: "realdonaldtrump" was
-leaking into keywords/entities from a mid-tweet mention before this).
+- Tweets-format pages: every row is a flat 2-cell row (timestamp cell, content cell ending in "Retweets: N" / "Favorites: N" labels).
+  Retweets matches (RT_PATTERN): handles "RT @user: text" (2016+), "@user: text" (pre-2016).
+- Truths-format pages: rows come in PAIRS — a 2-cell content row (timestamp, one-or-more <p> text) immediately followed by a 1-cell permalink row — so cell counts differ row-to-row.
+  Reposts ("ReTruths") have no text prefix to match on, so they're identified via the permalink's handle (truthsocial.com/@<handle>/posts/...).
+
+Both formats: link-only entries (bare URL, no real words) are excluded, and @mentions/URLs are stripped from the final content regardless of where in the text they appear.
 """
 import re
 from typing import Optional
@@ -34,6 +18,7 @@ from prefect_flows.extractors.base import BaseExtractor
 
 RT_PATTERN = re.compile(r'^["\u201c]?(RT\s+)?@\w+[:\-]?\s*')
 MENTION_PATTERN = re.compile(r"@\w+")
+HASHTAG_PATTERN = re.compile(r"#\w+")
 URL_PATTERN = re.compile(r"https?://\S+")
 PERMALINK_PATTERN = re.compile(r"truthsocial\.com/@([\w.]+)/posts/", re.IGNORECASE)
 
@@ -54,13 +39,20 @@ class UcsbExtractor(BaseExtractor):
         return table.find("tbody") if table else None
 
     def _clean(self, text: str) -> str:
-        """Strips URLs and @mentions from anywhere in the text, then
+        """Strips URLs, @mentions and #hashtags from anywhere in the text, then
         collapses whitespace left behind. Shared by both formats."""
         cleaned = URL_PATTERN.sub("", text)
         cleaned = MENTION_PATTERN.sub("", cleaned)
+        cleaned = HASHTAG_PATTERN.sub("", cleaned)
         return re.sub(r"\s+", " ", cleaned).strip()
 
-    # ---- ucsb_tweets: flat 2-cell rows ----
+    def _is_tweets_format(self, tbody) -> bool:
+        """Tweets-format: every row is a flat 2-cell row."""
+        rows = tbody.find_all("tr", recursive=False)
+        if not rows:
+            return True
+        return all(len(row.find_all("td")) == 2 for row in rows)
+
     def _parse_tweets(self, tbody) -> list[dict]:
         tweets = []
         for row in tbody.find_all("tr"):
@@ -69,8 +61,7 @@ class UcsbExtractor(BaseExtractor):
                 continue  # skips the "data as of <date>" footer row (colspan=2)
 
             _, content_cell = cells
-            # separator="\n" so "Retweets:"/"Favorites:" labels land on
-            # their own line regardless of the <br> tags between them
+            # separator="\n" to remove the <br> tags between "Retweets:"/"Favorites:" labels
             cell_text = content_cell.get_text(separator="\n", strip=True)
             tweet_text = cell_text.split("Retweets:")[0]
             tweet_text = re.sub(r"\s*\n\s*", " ", tweet_text).strip()
@@ -85,10 +76,7 @@ class UcsbExtractor(BaseExtractor):
             })
         return tweets
 
-    def _extract_tweets_content(self, local_path: str) -> Optional[str]:
-        tbody = self._tbody(local_path)
-        if not tbody:
-            return None
+    def _content_from_tweets(self, tbody) -> Optional[str]:
         tweets = self._parse_tweets(tbody)
         original = []
         for t in tweets:
@@ -99,7 +87,6 @@ class UcsbExtractor(BaseExtractor):
                 original.append(cleaned)
         return "\n\n".join(original) if original else None
 
-    # ---- ucsb_truths: paired rows (content row + permalink row) ----
     def _parse_truths(self, tbody) -> list[dict]:
         rows = tbody.find_all("tr", recursive=False)
         posts = []
@@ -107,10 +94,10 @@ class UcsbExtractor(BaseExtractor):
         while i < len(rows):
             cells = rows[i].find_all("td")
             if len(cells) != 2:
-                i += 1  # not a content row (e.g. an orphaned permalink row) — skip just this one
+                i += 1  # not a content row — skip just this one
                 continue
 
-            timestamp_cell, text_cell = cells
+            _, text_cell = cells
             paragraphs = text_cell.find_all("p")
             text = (
                 " ".join(p.get_text(strip=True) for p in paragraphs)
@@ -126,16 +113,13 @@ class UcsbExtractor(BaseExtractor):
                         handle = match.group(1).lower()
                 i += 2
             else:
-                i += 1  # last row on the page, no permalink to check — default to own handle
+                i += 1  # last row on the page
 
             if text:
                 posts.append({"text": text, "is_repost": handle != OWN_HANDLE})
         return posts
 
-    def _extract_truths_content(self, local_path: str) -> Optional[str]:
-        tbody = self._tbody(local_path)
-        if not tbody:
-            return None
+    def _content_from_truths(self, tbody) -> Optional[str]:
         posts = self._parse_truths(tbody)
         original = []
         for p in posts:
@@ -148,10 +132,13 @@ class UcsbExtractor(BaseExtractor):
 
     # ---- BaseExtractor interface ----
     def extract_content(self, local_path: str, raw_metadata: dict) -> Optional[str]:
-        if raw_metadata.get("source_name") == "ucsb_truths":
-            return self._extract_truths_content(local_path)
-        return self._extract_tweets_content(local_path)
-
+        tbody = self._tbody(local_path)
+        if not tbody:
+            return None
+        if self._is_tweets_format(tbody):
+            return self._content_from_tweets(tbody)
+        return self._content_from_truths(tbody)
+    
     def extract_title(self, local_path: str, raw_metadata: dict) -> Optional[str]:
         soup = self._soup(local_path)
         title_div = soup.find("div", class_="field-ds-doc-title")
