@@ -1,23 +1,12 @@
 """
-Source adapter: archived Trump social-media compilation pages from UCSB —
-covers both the 1st-term "Tweets of <date>" format and the 2nd-term
-"Truth Social Posts of <date>" format, since Trump's primary platform
-changed between terms and UCSB compiles each under a different title.
+Source adapter: archived Trump social-media compilation pages from UCSB — covers both the 1st-term "Tweets of <date>" format and the 2nd-term "Truth Social Posts of <date>" format,
+since Trump's primary platform changed between terms and UCSB compiles each under a different title.
 
-Discovers documents by paginating through a president's document listing
-page and yielding only links whose anchor text matches one of
-link_text_filters. Only one fetch per *listing* page is needed; matching
-documents are identified from the listing page's own link text, with
-zero extra requests.
+Discovers documents by paginating through a president's document listing page and yielding only links whose anchor text matches one of link_text_filters.
+One fetch per *listing*; matching documents are identified from the listing page's own link text, with zero extra requests.
 
-CONTENT-TYPE DETECTION: which filter phrase matched a given link
-determines its content_type ("tweet" vs "truth_social"), via
-FILTER_TO_CONTENT_TYPE below — driven by which configured filter actually
-matched, not by re-inspecting the link text for a hardcoded substring.
-
-Bronze stores the raw HTML page, same as MillerCenterSource — extraction
-(retweet/repost filtering, table parsing) happens in Silver via the
-single UcsbExtractor class (ucsb_extractor.py), not here.
+Both formats share the single "ucsb" source_name, but they are distinguished by their pages' table row shape at parse time (extraction in silver).
+Bronze stores the raw HTML page, extraction (retweet/repost filtering, table parsing) happens in Silver via the single UcsbExtractor class.
 """
 
 import time
@@ -38,10 +27,7 @@ FILTER_TO_CONTENT_TYPE = {
     "truth social posts of": "truth_social",
 }
 
-SOURCE_NAME_BY_CONTENT_TYPE = {
-    "tweet": "ucsb_tweets",
-    "truth_social": "ucsb_truths",
-}
+SOURCE_NAME = "ucsb"
 
 
 class UcsbSource(BaseSource):
@@ -54,15 +40,9 @@ class UcsbSource(BaseSource):
         request_timeout: int = 20,
     ):
         """
-        - listing_url: the president's document listing page to paginate
-          through (e.g. .../donald-j-trump-1st-term or
-          .../donald-j-trump-2nd-term)
-        - link_text_filter: a single substring, OR an iterable of
-          substrings, an anchor's text must contain (case-insensitive) to
-          be yielded as a candidate.
-        - max_documents: cap on yielded candidates (not on listing pages
-          visited — the crawl may page through many listing pages before
-          finding enough matches)
+        - listing_url: the president's document listing page to paginate through (/donald-j-trump-1st-term or /donald-j-trump-2nd-term)
+        - link_text_filter: an anchor's text must contain (case-insensitive) to be yielded as a candidate.
+        - max_documents: cap on yielded candidates (not on listing pages visited)
         """
         self.listing_url = listing_url
         self.link_text_filters: List[str] = (
@@ -93,8 +73,7 @@ class UcsbSource(BaseSource):
         return urljoin(current_url, link["href"]) if link else None
 
     def _matched_content_type(self, link_text_lower: str) -> Optional[str]:
-        """Returns the content_type for the first configured filter that
-        matches this link's text, or None if none match."""
+        """Returns the content_type for the first configured filter that matches this link's text, or None if none match -> skip the link."""
         for filter_text in self.link_text_filters:
             if filter_text in link_text_lower:
                 return FILTER_TO_CONTENT_TYPE.get(filter_text, "unknown")
@@ -108,10 +87,10 @@ class UcsbSource(BaseSource):
             is_local=False,
             mime_type="text/html",
             raw_metadata={
-                "source_name": SOURCE_NAME_BY_CONTENT_TYPE.get(content_type, content_type),
+                "source_name": SOURCE_NAME,
                 "title": link_text,  # e.g. "Tweets of June 16, 2015" / "Truth Social Posts of April 24, 2025"
                 "content_source": None,
-                "extra": {},
+                "extra": {"matched_format": content_type},
             },
         )
 
