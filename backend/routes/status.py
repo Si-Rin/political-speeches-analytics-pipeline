@@ -33,14 +33,14 @@ def _gold_status_for_row(gold_row: Optional[tuple]) -> tuple[List[GoldModuleStat
     if gold_row is None:
         return (
             [
-                GoldModuleStatus(module=module, done=False)
+                GoldModuleStatus(module=module, done=False, result=None)
                 for module in GOLD_MODULES
             ],
             "not_started",
         )
 
     modules = [
-        GoldModuleStatus(module=module, done=value is not None)
+        GoldModuleStatus(module=module, done=value is not None, result=value)
         for module, value in zip(GOLD_MODULES, gold_row)
     ]
 
@@ -101,7 +101,7 @@ def get_status(doc_id: int):
 
 
 @router.get("/status", response_model=PipelineStatusResponse)
-def get_all_statuses(limit: int = 100):
+def get_all_statuses():
     conn = get_postgres_connection()
 
     try:
@@ -112,9 +112,7 @@ def get_all_statuses(limit: int = 100):
                 FROM bronze.documents b LEFT JOIN silver.text s ON s.doc_id = b.doc_id
                 WHERE b.excluded = FALSE
                 ORDER BY b.ingestion_date DESC
-                LIMIT %s
                 """,
-                (limit,),
             )
 
             base_rows = cur.fetchall()

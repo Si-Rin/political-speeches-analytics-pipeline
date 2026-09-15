@@ -82,16 +82,16 @@ def trigger_crawl(
     })
 
 
-def get_history(source_type: Optional[str] = None, limit: int = 100) -> List[Dict]:
-    params = {"limit": limit}
+def get_history(source_type: Optional[str] = None) -> List[Dict]:
+    params = {}
     if source_type and source_type != "All":
         params["source_type"] = source_type
     result = _get("/documents/history", **params)
     return result["documents"] if result else []
 
 
-def get_all_statuses(limit: int = 100) -> List[Dict]:
-    result = _get("/status", limit=limit)
+def get_all_statuses() -> List[Dict]:
+    result = _get("/status")
     return result["statuses"] if result else []
 
 

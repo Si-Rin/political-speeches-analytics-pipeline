@@ -5,7 +5,7 @@ No business logic here — validation and shape only
 See pipeline_probe.py (metadata detection) and pipeline_runner.py (triggering bronze_ingest.py) for the actual logic these shapes wrap.
 """
 from datetime import date, datetime
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -95,6 +95,7 @@ class DocumentHistoryResponse(BaseModel):
 class GoldModuleStatus(BaseModel):
     module: str
     done: bool
+    result: Optional[Any] = None
 
 
 class PipelineStatus(BaseModel):
