@@ -13,6 +13,6 @@ def get_extractor(source_type: str, raw_metadata: dict) -> BaseExtractor:
         return AudioVideoExtractor()
     if raw_metadata.get("source_name") == "miller_center":
         return MillerCenterExtractor()
-    if raw_metadata.get("source_name") == "ucsb":
+    if "ucsb" in raw_metadata.get("source_name"):
         return UcsbExtractor()
     return GenericHtmlExtractor()
