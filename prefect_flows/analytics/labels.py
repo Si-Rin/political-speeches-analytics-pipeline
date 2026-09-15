@@ -2,11 +2,11 @@
 Zero-shot multi-label classification — Stage B.
 
 Independent of the shared spaCy Doc (see nlp_pipeline.py): this module works directly off raw transcript text through an NLI-based zero-shot classifier
-It classifies each document against a FIXED policy-domain taxonomy (CANDIDATE_LABELS below) 
+It classifies each document against a FIXED policy-domain taxonomy (CANDIDATE_LABELS below)
 This is the "supervised classification" counterpart to topics.py's unsupervised/emergent topic modeling (see the distinction noted in init_schema.sql: "topics" = unsupervised, "labels" = supervised-style)
 Populates gold.analytics.labels.
 
-CANDIDATE_LABELS is the single most opinionated thing in this file — it's a starting taxonomy for US-style political speech, not a fixed fact. 
+CANDIDATE_LABELS is the single most opinionated thing in this file — it's a starting taxonomy for US-style political speech, not a fixed fact.
 Tune it for the corpus; each label is used verbatim as an NLI hypothesis ("This text is about {label}."), so keep labels short, mutually distinguishable noun phrases rather than sentences.
 """
 from typing import Dict, List
@@ -24,15 +24,15 @@ CANDIDATE_LABELS: List[str] = [
     "crime and justice",
     "civil rights and social issues",
     "elections and democracy",
-    "energy",
+    "energy policy and production",
     "technology and innovation",
 ]
 
-# facebook/bart-large-mnli: the standard NLI-based zero-shot classifier — well-documented, robust default. 
+# facebook/bart-large-mnli: the standard NLI-based zero-shot classifier — well-documented, robust default.
 # Swap for a smaller/faster model (e.g. MoritzLaurer/deberta-v3-base-zeroshot-v1.1-all-33) if batch latency becomes the bottleneck; the rest of this module doesn't change.
 MODEL_NAME = "facebook/bart-large-mnli"
 
-# A label is kept in the final "labels" list if its (max-aggregated, see classify_labels) score is at or above this. 
+# A label is kept in the final "labels" list if its (max-aggregated, see classify_labels) score is at or above this.
 # Independent per-label thresholding is what "multi_label=True" buys us — scores don't have to sum to 1, so a speech can legitimately score high on several labels.
 DEFAULT_THRESHOLD = 0.5
 
@@ -62,8 +62,8 @@ def classify_labels(
     Zero-shot multi-label classification of a document against candidate_labels.
 
     Long documents are split into sentence-bounded chunks (see text_chunking.chunk_text) and each chunk is scored independently
-    A label's final score is the MAX across chunks — a document counts as "about" a label if any part of it strongly discusses it, not just on average across the whole speech. 
-    Trade-off: a short, intense aside in an otherwise unrelated speech can surface a label on the strength of one sentence. 
+    A label's final score is the MAX across chunks — a document counts as "about" a label if any part of it strongly discusses it, not just on average across the whole speech.
+    Trade-off: a short, intense aside in an otherwise unrelated speech can surface a label on the strength of one sentence.
     If that over-triggers in practice, switch the aggregation to mean or a length-weighted average instead — the chunk-scoring loop is the only place that needs to change.
 
     Returns:
