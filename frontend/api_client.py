@@ -97,3 +97,27 @@ def get_all_statuses() -> List[Dict]:
 
 def get_status(doc_id: int) -> Optional[Dict]:
     return _get(f"/status/{doc_id}")
+
+
+def get_overview() -> Optional[Dict]:
+    return _get("/analytics/overview")
+
+
+def get_topics() -> Optional[Dict]:
+    return _get("/analytics/topics")
+
+
+def get_labels() -> Optional[Dict]:
+    return _get("/analytics/labels")
+
+
+def get_sentiment() -> Optional[Dict]:
+    return _get("/analytics/sentiment")
+
+
+def get_emotions() -> Optional[Dict]:
+    return _get("/analytics/emotions")
+
+
+def get_entities(top_n: int = 15) -> Optional[Dict]:
+    return _get("/analytics/entities", top_n=top_n)
