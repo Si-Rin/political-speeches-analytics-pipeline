@@ -9,7 +9,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter
 
-from prefect_flows.clients import get_postgres_connection
+from backend.db import get_connection
 from backend.schemas import PipelineStatus, PipelineStatusResponse, GoldModuleStatus
 
 router = APIRouter()
@@ -58,7 +58,7 @@ def _gold_status_for_row(gold_row: Optional[tuple]) -> tuple[List[GoldModuleStat
 
 @router.get("/status/{doc_id}", response_model=PipelineStatus)
 def get_status(doc_id: int):
-    conn = get_postgres_connection()
+    conn = get_connection()
 
     try:
         with conn.cursor() as cur:
@@ -102,7 +102,7 @@ def get_status(doc_id: int):
 
 @router.get("/status", response_model=PipelineStatusResponse)
 def get_all_statuses():
-    conn = get_postgres_connection()
+    conn = get_connection()
 
     try:
         with conn.cursor() as cur:

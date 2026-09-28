@@ -11,8 +11,6 @@ COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend ./backend
-COPY prefect_flows ./prefect_flows
-COPY requirements.txt .
 
 ENV PIPELINE_PYTHON=/usr/local/bin/python
 

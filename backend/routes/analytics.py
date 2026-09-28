@@ -6,7 +6,7 @@ internship report's Chapter 4 (chapter4_stats.py, validate_topics.py) —
 reused rather than reimplemented, so the dashboard and the report numbers
 stay consistent with each other.
 
-DB access is plain psycopg2 via prefect_flows.clients, same pattern as
+DB access is plain psycopg2 via backend.db, same pattern as
 routes/documents.py and routes/status.py.
 """
 from collections import Counter, defaultdict
@@ -14,7 +14,7 @@ from typing import Optional
 
 from fastapi import APIRouter
 
-from prefect_flows.clients import get_postgres_connection
+from backend.db import get_connection
 
 from backend.schemas import (
     OverviewResponse, SourceTypeCount, OriginCount, MonthCount, WordCountStats,
@@ -44,7 +44,7 @@ def _dominant_label(labels_json: Optional[dict]) -> Optional[str]:
 # ---------------------------------------------------------------------------
 @router.get("/analytics/overview", response_model=OverviewResponse)
 def get_overview():
-    conn = get_postgres_connection()
+    conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT count(*) FROM bronze.documents")
@@ -117,7 +117,7 @@ def get_overview():
 # ---------------------------------------------------------------------------
 @router.get("/analytics/topics", response_model=TopicsResponse)
 def get_topics():
-    conn = get_postgres_connection()
+    conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -184,7 +184,7 @@ def get_topics():
 # ---------------------------------------------------------------------------
 @router.get("/analytics/labels", response_model=LabelsResponse)
 def get_labels():
-    conn = get_postgres_connection()
+    conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -223,7 +223,7 @@ def get_labels():
 # ---------------------------------------------------------------------------
 @router.get("/analytics/sentiment", response_model=SentimentResponse)
 def get_sentiment():
-    conn = get_postgres_connection()
+    conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -263,7 +263,7 @@ def get_sentiment():
 # ---------------------------------------------------------------------------
 @router.get("/analytics/emotions", response_model=EmotionsResponse)
 def get_emotions():
-    conn = get_postgres_connection()
+    conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -288,7 +288,7 @@ def get_emotions():
 # ---------------------------------------------------------------------------
 @router.get("/analytics/entities", response_model=EntitiesResponse)
 def get_entities(top_n: int = 15):
-    conn = get_postgres_connection()
+    conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT entities FROM gold.analytics WHERE entities IS NOT NULL")
