@@ -8,6 +8,8 @@ from abc import abstractmethod, ABC
 from dataclasses import dataclass
 from typing import Optional
 
+from prefect_flows.extractors.utils import parse_date
+
 @dataclass 
 class ExtractedContent :
     content: Optional[str] = None
@@ -46,7 +48,11 @@ class BaseExtractor(ABC):
             raise ValueError(f"{self.__class__.__name__}: extraction produced empty content")
         title = self.extract_title(local_path, raw_metadata)
         pub_date = self.extract_pub_date(local_path, raw_metadata)
-        return ExtractedContent(content=content, title=title,publication_date=pub_date)
+        # Values typed by the researcher win over detected ones
+        user = (raw_metadata or {}).get("user_provided") or {}
+        title = (user.get("title") or "").strip() or title
+        pub_date = parse_date(user.get("publication_date")) or pub_date
+        return ExtractedContent(content=content, title=title, publication_date=pub_date)
     
     @abstractmethod
     def extract_content(self, local_path: str, raw_metadata: dict) -> Optional[str]:

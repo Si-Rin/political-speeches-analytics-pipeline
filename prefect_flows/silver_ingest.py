@@ -33,7 +33,7 @@ def get_pending_documents(limit: Optional[int] = None, doc_ids: Optional[list[in
   try:
     with conn.cursor() as cur:
       base = """
-          SELECT b.doc_id, b.source_type, b.storage_path, b.raw_metadata
+          SELECT b.doc_id, b.source_type, b.storage_path, b.raw_metadata, b.source_url
           FROM bronze.documents b
           LEFT JOIN silver.text s ON s.doc_id = b.doc_id
           WHERE (s.doc_id IS NULL OR s.status_processing != 'success') AND b.excluded = FALSE
@@ -45,7 +45,7 @@ def get_pending_documents(limit: Optional[int] = None, doc_ids: Optional[list[in
       else:
           cur.execute(base + " ORDER BY b.doc_id")
       rows = cur.fetchall()
-      return [{"doc_id": r[0], "source_type": r[1], "storage_path": r[2], "raw_metadata": r[3] or {}} for r in rows]
+      return [{"doc_id": r[0], "source_type": r[1], "storage_path": r[2], "raw_metadata": r[3] or {}, "source_url": r[4]} for r in rows]
   finally:
       conn.close()
       
@@ -83,8 +83,8 @@ def download_from_minio(storage_path: str) -> str:
         raise
   
 @task
-def extract(local_path: str, source_type: str, raw_metadata: dict):
-    extractor = get_extractor(source_type, raw_metadata)
+def extract(local_path: str, source_type: str, raw_metadata: dict, source_url: Optional[str] = None):
+    extractor = get_extractor(source_type, raw_metadata, source_url)
     return extractor.extract(local_path, raw_metadata)  # extract content -> title -> date
 
 @task
@@ -124,7 +124,7 @@ def ingest_silver(limit: Optional[int] = None, doc_ids: Optional[list[int]] = No
                 failed += 1
                 logger.error(f"doc_id={doc['doc_id']}: Bronze object missing, marked failed")
                 continue
-            content = extract(local_path, doc["source_type"], doc["raw_metadata"])
+            content = extract(local_path, doc["source_type"], doc["raw_metadata"], doc.get("source_url"))
             record = SilverRecord.success(doc["doc_id"], content)
             upsert_silver(record)
             succeeded += 1

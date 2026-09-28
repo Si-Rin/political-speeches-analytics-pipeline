@@ -1,4 +1,5 @@
 """faster-whisper transcription, model loaded once per worker process"""
+import re
 from typing import Optional
 from faster_whisper import WhisperModel
 
@@ -14,7 +15,58 @@ BASE_PROMPT = (
 
 CONTEXT_FIELD_CANDIDATES = ["description", "summary", "about"]
 
+DEFAULT_LANGUAGE = "en"
+
+# Languages we accept from the researcher (ISO 639-1). Anything else falls back to DEFAULT_LANGUAGE.
+_SUPPORTED_LANGUAGES = frozenset(
+    {
+        "en",  # English
+        "fr",  # French
+        "ar",  # Arabic
+        "es",  # Spanish
+        "de",  # German
+        "it",  # Italian
+        "pt",  # Portuguese
+        "tr",  # Turkish
+        "ru",  # Russian
+        "uk",  # Ukrainian
+        "zh",  # Chinese
+        "ja",  # Japanese
+        "ko",  # Korean
+        "hi",  # Hindi
+    }
+)
+_LANGUAGE_NAMES = {
+    "english": "en",
+    "french": "fr",
+    "arabic": "ar",
+    "spanish": "es",
+    "german": "de",
+    "italian": "it",
+    "portuguese": "pt",
+    "turkish": "tr",
+    "russian": "ru",
+    "ukrainian": "uk",
+    "chinese": "zh",
+    "japanese": "ja",
+    "korean": "ko",
+    "hindi": "hi",
+}
+
 _model: Optional[WhisperModel] = None
+
+
+def resolve_language(raw_metadata: dict) -> str:
+    """
+    Whisper language from the researcher's input: an ISO code ("fr", "en-US", "zh_CN") or a common
+    English name ("French"). Unknown or unsupported values fall back to DEFAULT_LANGUAGE.
+    """
+    value = str(((raw_metadata or {}).get("user_provided") or {}).get("language") or "").strip().lower()
+    if not value:
+        return DEFAULT_LANGUAGE
+    value = _LANGUAGE_NAMES.get(value, value)
+    value = re.split(r"[-_]", value, maxsplit=1)[0]   # "en-us" -> "en"
+    return value if value in _SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
 
 
 def get_whisper_model() -> WhisperModel:
@@ -57,6 +109,6 @@ def transcribe(local_path: str, raw_metadata: Optional[dict] = None) -> str:
         local_path, 
         beam_size=3,
         initial_prompt=prompt,
-        language="en"
+        language=resolve_language(raw_metadata or {}),
     )
     return "\n".join(seg.text.strip() for seg in segments).strip()
