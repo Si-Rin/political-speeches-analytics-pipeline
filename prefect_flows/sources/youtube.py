@@ -5,23 +5,22 @@ YouTube URLs (youtube.com/watch?v=..., youtu.be/...) are web pages, not
 direct file links — a plain HTTP GET returns HTML, not video bytes. yt-dlp
 resolves the page, picks a real media stream, and downloads it to disk.
 
-Because of that, this adapter (unlike LocalFolderSource/UrlListSource)
-actually downloads the file during discover() rather than just listing it —
+Because of that, this adapter (unlike LocalFolderSource)
+actually downloads the file during candidates() rather than just listing it —
 there's no way to get a checksummable byte stream from a YouTube URL without
 doing the extraction first. Downloaded files go to a temp directory; the
 ingestion flow reads them from there exactly like a local file.
 
-Note: downloaded files are left in the OS temp directory rather than
-explicitly deleted after ingestion (discover() runs before we know whether
-staging/upload will succeed). On a long-lived worker this can accumulate —
-fine for occasional/manual runs; add explicit cleanup if this becomes a
-scheduled/recurring job.
+Each download lands in its own WorkArea scope directory (yt-dlp leaves .part files and merge intermediates there).
+The scope travels with the Candidate (TempFileHandle): the flow releases it once the candidate is consumed, and
+this adapter releases it itself when a download fails, so nothing is left behind.
 """
-import tempfile
 from pathlib import Path
 import time
 from typing import Iterator, List
 
+from prefect_flows.collection.handles import TempFileHandle
+from prefect_flows.collection.workarea import WorkArea
 from prefect_flows.sources.base import BaseSource, Candidate
 
 try:
@@ -33,7 +32,8 @@ except ImportError as e:
 
 
 class YoutubeSource(BaseSource):
-    def __init__(self, urls: List[str], playlist_mode: bool = False, max_downloads: int = None, audio_only: bool = False):
+    def __init__(self, urls: List[str], work: WorkArea, playlist_mode: bool = False, max_downloads: int = None,
+                 audio_only: bool = False, delay_seconds: float = 2.0):
         """
         urls: list of YouTube video URLs
         playlist_mode: if True, treats the URLs as playlists and downloads all videos in the playlist
@@ -43,6 +43,8 @@ class YoutubeSource(BaseSource):
                     don't care about video)
         """
         self.urls = urls
+        self.work = work                  # hands out one scope directory per download
+        self.delay_seconds = delay_seconds
         self.playlist_mode = playlist_mode
         self.max_downloads = max_downloads
         self.audio_only = audio_only
@@ -67,12 +69,9 @@ class YoutubeSource(BaseSource):
                 "language": info.get("language"),           # yt-dlp's own guess, if present
             }
 
-    def discover(self) -> Iterator[Candidate]:
-        download_dir = Path(tempfile.mkdtemp(prefix="youtube_dl_"))
-        
-        download_opts = {
+    def candidates(self) -> Iterator[Candidate]:
+        base_opts = {
             "format": "bestaudio/best" if self.audio_only else "best[ext=mp4]/best",
-            "outtmpl": str(download_dir / "%(id)s.%(ext)s"),
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
@@ -112,31 +111,38 @@ class YoutubeSource(BaseSource):
             # Video(s) download loop
             failed_count = 0
             for entry_url in entry_urls:
+                scope = self.work.scope("yt")
+                handed_over = False
                 try:
-                    with yt_dlp.YoutubeDL(download_opts) as ydl:
+                    opts = {**base_opts, "outtmpl": str(scope.path / "%(id)s.%(ext)s")}
+                    with yt_dlp.YoutubeDL(opts) as ydl:
                         info = ydl.extract_info(entry_url, download=True)
                         downloaded_path = Path(ydl.prepare_filename(info))
 
                     if not downloaded_path.exists():
                         raise FileNotFoundError(f"yt-dlp reported success but file not found: {downloaded_path}")
 
-                    yield Candidate(
+                    candidate = Candidate(
                         source_url=entry_url,
                         source_type="audio" if self.audio_only else "video",
                         file_name=downloaded_path.name,
-                        is_local=True,
+                        handle=TempFileHandle(downloaded_path, scope),
                         mime_type="audio/mp4" if self.audio_only else "video/mp4",
                         raw_metadata=self._extract_metadata(info),
-                        local_path=str(downloaded_path),
                     )
+                    handed_over = True          # from here on the consumer owns (and releases) the scope
+                    yield candidate
                 except Exception as e:
                     failed_count += 1
                     # one bad/unavailable url shouldnt stop the whole batch
                     print(f"[YoutubeSource] Failed to download '{entry_url}': {type(e).__name__}: {e}")
                     continue
                 finally:
-                    time.sleep(2)
-                    
+                    if not handed_over:
+                        scope.release()         # producer releases what it does not yield
+                    if self.delay_seconds:
+                        time.sleep(self.delay_seconds)
+
             if failed_count:
                 print(f"[YoutubeSource] Failed to download {failed_count} out of {len(entry_urls)} entries from '{url}'")
                 

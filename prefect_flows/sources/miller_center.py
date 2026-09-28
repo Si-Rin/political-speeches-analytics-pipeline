@@ -13,9 +13,10 @@ from typing import Set
 import requests
 from bs4 import BeautifulSoup
 
+from prefect_flows.collection.handles import HttpHandle
 from prefect_flows.sources.base import BaseSource, Candidate
 
-DEFAULT_USER_AGENT = "PoliticalSpeechesBot/1.0 (+research project; contact: grirasirin@gmail.com)"
+from prefect_flows.http_config import USER_AGENT as DEFAULT_USER_AGENT
 
 
 class MillerCenterSource(BaseSource):
@@ -65,14 +66,14 @@ class MillerCenterSource(BaseSource):
             source_url=url,
             source_type="text",
             file_name=url.rstrip("/").split("/")[-1] + ".html",
-            is_local=False,
+            handle=HttpHandle(url, filename=url.rstrip("/").split("/")[-1] + ".html"),
             mime_type="text/html",
             raw_metadata={
                 "source_name": "miller_center",
             },
         )
 
-    def discover(self) -> Iterator[Candidate]:
+    def candidates(self) -> Iterator[Candidate]:
         if self.urls:
             for url in self.urls:
                 soup = self._fetch(url)

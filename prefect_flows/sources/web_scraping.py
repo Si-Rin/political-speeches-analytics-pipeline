@@ -1,10 +1,10 @@
 """
 Source adapter: web pages discovered via keyword-based crawling.
 
-The source starts from seed URL(s) and crawls outward through links (unlike UrlListSource), scoring each page's relevance by keyword match.
+The source starts from seed URL(s) and crawls outward through links (unlike single-URL sources), scoring each page's relevance by keyword match.
 Only pages that clear the relevance bar are yielded as candidates — the crawl itself explores wider than what gets ingested.
 
-Like UrlListSource, discover() only *lists* candidates (source_url = the page URL itself); it does not download page content.
+Like the other sources, candidates() only *lists* candidates (source_url = the page URL itself); it does not download page content.
 checksum_and_stage in the ingestion flow does the actual GET + streaming + hashing later, exactly like it does for direct URL candidates.
 This adapter fetches pages too, but only to read links/text for crawl decisions — that fetch is throwaway and separate from the one Bronze staging will do.
 
@@ -22,9 +22,10 @@ from urllib.robotparser import RobotFileParser
 import requests
 from bs4 import BeautifulSoup
 
+from prefect_flows.collection.handles import HttpHandle
 from prefect_flows.sources.base import BaseSource, Candidate
 
-DEFAULT_USER_AGENT = "PoliticalSpeechesBot/1.0 (+research project; contact: grirasirin@gmail.com)"      # Created a custom user agent to avoid being blocked by websites
+from prefect_flows.http_config import USER_AGENT as DEFAULT_USER_AGENT  # custom user agent to avoid being blocked by websites
 
 class WebCrawlSource(BaseSource):
     def __init__(
@@ -124,7 +125,7 @@ class WebCrawlSource(BaseSource):
             return from_base_path == to_base_path
         return False
 
-    def discover(self) -> Iterator[Candidate]:
+    def candidates(self) -> Iterator[Candidate]:
         visited: Set[str] = set()
         queue = deque((url, 0, None) for url in self.seed_urls)     # queue holds tuples of (url, depth, parent_url) to track crawl depth and origin
         yielded = 0
@@ -166,7 +167,7 @@ class WebCrawlSource(BaseSource):
                     source_url=url,
                     source_type="text",
                     file_name=self._make_filename(url),
-                    is_local=False,
+                    handle=HttpHandle(url, filename=self._make_filename(url)),
                     mime_type="text/html",
                     raw_metadata={
                         "discovered_via": parent,

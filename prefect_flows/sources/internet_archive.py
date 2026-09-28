@@ -17,9 +17,10 @@ import requests
 from bs4 import BeautifulSoup
 
 from prefect_flows.extractors.utils import parse_date
+from prefect_flows.collection.handles import HttpHandle
 from prefect_flows.sources.base import BaseSource, Candidate
 
-DEFAULT_USER_AGENT = "PoliticalSpeechesBot/1.0 (+research project; contact: you@example.com)"
+from prefect_flows.http_config import USER_AGENT as DEFAULT_USER_AGENT
 
 
 class InternetArchiveSource(BaseSource):
@@ -91,7 +92,7 @@ class InternetArchiveSource(BaseSource):
         extracted_date = match.group(1) if match else None
         return parse_date(extracted_date)
 
-    def discover(self) -> Iterator[Candidate]:
+    def candidates(self) -> Iterator[Candidate]:
         for url in self.urls:
             soup = self._fetch(url)
             if soup is None:
@@ -107,7 +108,7 @@ class InternetArchiveSource(BaseSource):
                 source_url=urljoin(url, f"/download/{identifier}/{identifier}.mp3"),
                 source_type="audio",
                 file_name=f"{identifier}.mp3",
-                is_local=False,
+                handle=HttpHandle(urljoin(url, f"/download/{identifier}/{identifier}.mp3"), filename=f"{identifier}.mp3"),
                 mime_type="audio/mpeg",
                 raw_metadata={
                     "source_name": "internet_archive",
