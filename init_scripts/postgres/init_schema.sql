@@ -3,10 +3,32 @@
 CREATE SCHEMA IF NOT EXISTS bronze;
 CREATE SCHEMA IF NOT EXISTS silver;
 CREATE SCHEMA IF NOT EXISTS gold;
+CREATE SCHEMA IF NOT EXISTS collection;
+
+-- Collection runs : metadata for collection runs orchestrated by Prefect (Bronze layer)
+CREATE TABLE IF NOT EXISTS collection.runs (
+    run_id                UUID PRIMARY KEY,
+    prefect_flow_run_id   UUID,
+    mode                  TEXT    NOT NULL CHECK (mode IN ('single', 'archive')),
+    source_name           TEXT    NOT NULL,
+    params                JSONB   NOT NULL,
+    params_version        INT     NOT NULL DEFAULT 1,
+    dry_run               BOOLEAN NOT NULL DEFAULT FALSE,
+    effective_config      JSONB,        -- snapshot of internal policy applied
+    status                TEXT    NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'completed_with_errors', 'failed', 'cancelled')),
+    listing_pages_visited INT     NOT NULL DEFAULT 0,
+    error_message         TEXT,
+    requested_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at            TIMESTAMPTZ,
+    finished_at           TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_runs_status_requested ON collection.runs (status, requested_at DESC);
 
 -- Bronze Layer : metadata for raw files
 CREATE TABLE IF NOT EXISTS bronze.documents (
     doc_id          SERIAL      PRIMARY KEY,   -- the PK is serial for easy insertion and auto-incrementing IDs
+    first_run_id    UUID        REFERENCES collection.runs (run_id)     ON DELETE SET NULL,
     source_url      TEXT,
     source_type     TEXT        NOT NULL CHECK (source_type IN ('video', 'audio', 'text')),
     file_name       TEXT,
@@ -24,7 +46,34 @@ CREATE TABLE IF NOT EXISTS bronze.documents (
 
 CREATE INDEX IF NOT EXISTS idx_bronze_excluded ON bronze.documents(excluded);
 CREATE INDEX IF NOT EXISTS idx_bronze_source_type ON bronze.documents(source_type);
+CREATE INDEX IF NOT EXISTS idx_bronze_source_url ON bronze.documents (source_url);
 CREATE INDEX IF NOT EXISTS idx_bronze_ingestion_date ON bronze.documents(ingestion_date);
+
+-- Discovery log : metadata for discovered documents (Bronze layer)
+CREATE TABLE IF NOT EXISTS bronze.discovery_log (
+    id               BIGSERIAL PRIMARY KEY,
+    run_id           UUID NOT NULL REFERENCES collection.runs (run_id) ON DELETE CASCADE,
+    source_name      TEXT NOT NULL,
+    source_url       TEXT NOT NULL,
+    canonical_url    TEXT NOT NULL,
+    listing_url      TEXT,
+    title_hint       TEXT,
+    status           TEXT NOT NULL CHECK (status IN ('prefilter_rejected', 'known_url_skipped', 'fetch_failed',
+    'content_rejected', 'duplicate_content', 'ingested', 'ingest_failed', 'prefilter_passed')),
+    reason_code      TEXT CHECK (reason_code IN ('not_a_document_link', 'url_pattern_excluded', 'out_of_date_range', 'robots_disallowed',
+    'http_error', 'timeout', 'content_too_large', 'empty_text', 'no_keyword_match', 'extraction_failed', 'checksum_exists',
+    'upload_failed', 'db_error', 'budget_exhausted', 'doc_type_excluded', 'access_restricted', 'format_unavailable')),
+    detail           TEXT,
+    matched_keywords JSONB,
+    match_scope      TEXT CHECK (match_scope IN
+        ('content', 'title', 'url', 'description', 'about', 'caption')),
+    keywords_hash    TEXT,
+    doc_id           INT REFERENCES bronze.documents (doc_id) ON DELETE SET NULL,
+    decided_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_dlog_run_status ON bronze.discovery_log (run_id, status);
+CREATE INDEX IF NOT EXISTS idx_dlog_url_kw     ON bronze.discovery_log (canonical_url, keywords_hash);
 
 -- Silver Layer : processed data with extracted metadata
 CREATE TABLE IF NOT EXISTS silver.text (
