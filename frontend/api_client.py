@@ -1,10 +1,12 @@
 """
-Thin wrapper around the backend API
+Thin wrapper around the backend API.
 
-Keeps `requests` calls and error handling out of the page files.
+Keeps `requests` calls and error handling out of the page files. Every function that hits the backend returns
+None on failure (after showing st.error), so pages just check truthiness.
 """
 import os
-from typing import Dict, List, Optional
+from datetime import date
+from typing import Any, Dict, List, Optional
 
 import requests
 import streamlit as st
@@ -12,81 +14,120 @@ import streamlit as st
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
 
 
+def _url(path: str) -> str:
+    return f"{API_BASE_URL}{path}"
+
+
+def _error_detail(resp: requests.Response) -> str:
+    try:
+        detail = resp.json().get("detail", resp.text)
+    except ValueError:
+        detail = resp.text
+    return detail if isinstance(detail, str) else str(detail)
+
+
 def _get(path: str, **params) -> Optional[Dict]:
     try:
-        resp = requests.get(f"{API_BASE_URL}{path}", params=params, timeout=15)
-        resp.raise_for_status()
-        return resp.json()
-    except requests.RequestException as e:
-        st.error(f"Could not reach the backend at {API_BASE_URL}: {e}")
-        return None
-
-
-def _post(path: str, json_body: Dict) -> Optional[Dict]:
-    try:
-        resp = requests.post(f"{API_BASE_URL}{path}", json=json_body, timeout=30)
+        resp = requests.get(_url(path), params={k: v for k, v in params.items() if v is not None}, timeout=15)
         resp.raise_for_status()
         return resp.json()
     except requests.HTTPError as e:
-        detail = e.response.json().get("detail", str(e)) if e.response is not None else str(e)
-        st.error(f"Request failed: {detail}")
+        st.error(f"Request failed: {_error_detail(e.response)}")
         return None
     except requests.RequestException as e:
         st.error(f"Could not reach the backend at {API_BASE_URL}: {e}")
         return None
 
 
+def _post(path: str, json_body: Optional[Dict] = None) -> Optional[Dict]:
+    try:
+        resp = requests.post(_url(path), json=json_body, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.HTTPError as e:
+        st.error(f"Request failed: {_error_detail(e.response)}")
+        return None
+    except requests.RequestException as e:
+        st.error(f"Could not reach the backend at {API_BASE_URL}: {e}")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Probe (single-mode "review detected information" step)
+# ---------------------------------------------------------------------------
 def probe_source(location: str, is_local: bool, content_type: str) -> Optional[Dict]:
-    return _post("/documents/probe", {
-        "location": location, "is_local": is_local, "content_type": content_type,
-    })
+    return _post("/documents/probe", {"location": location, "is_local": is_local, "content_type": content_type})
 
 
-def submit_source(
-    location: str,
-    is_local: bool,
-    content_type: str,
-    raw_metadata: Optional[Dict],
-    title: Optional[str] = None,
-    publication_date=None,
-    language: Optional[str] = None,
-    notes: Optional[str] = None,
-) -> Optional[Dict]:
-    body = {
-        "location": location, "is_local": is_local, "content_type": content_type, "raw_metadata": raw_metadata
-    }
-    if title is not None:
-        body["title"] = title
-    if publication_date is not None:
-        body["publication_date"] = str(publication_date)
-    if language is not None:
-        body["language"] = language
-    if notes is not None:
-        body["notes"] = notes
-    return _post("/documents/submit", body)
+# ---------------------------------------------------------------------------
+# Uploads
+# ---------------------------------------------------------------------------
+def upload_file(file_name: str, data: bytes, content_type: Optional[str]) -> Optional[Dict]:
+    try:
+        resp = requests.post(_url("/uploads"), files={"file": (file_name, data, content_type or "application/octet-stream")}, timeout=120)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.HTTPError as e:
+        st.error(f"Upload failed: {_error_detail(e.response)}")
+        return None
+    except requests.RequestException as e:
+        st.error(f"Could not reach the backend at {API_BASE_URL}: {e}")
+        return None
 
 
-def trigger_crawl(
-    seed_urls: List[str],
-    keywords: List[str],
-    allowed_domains: Optional[List[str]] = None,
-    max_depth: Optional[int] = None,
-    max_pages: Optional[int] = None,
-) -> Optional[Dict]:
-    return _post("/documents/crawl", {
-        "seed_urls": seed_urls,
-        "keywords": keywords,
-        "allowed_domains": allowed_domains,
-        "max_depth": max_depth,
-        "max_pages": max_pages,
-    })
+# ---------------------------------------------------------------------------
+# Runs
+# ---------------------------------------------------------------------------
+def create_run(source: str, dry_run: bool = False, **fields: Any) -> Optional[Dict]:
+    """
+    `fields` are the source-specific request fields (see backend/schemas/sources.py); dates are stringified.
+    POST /runs can fail two ways: validation (422, nothing created) or a Prefect outage (502, the run row exists
+    but is marked failed) -- the caller needs to tell those apart, so this bypasses the generic _post helper.
+    """
+    body = {"source": source, "dry_run": dry_run}
+    for k, v in fields.items():
+        if v is None:
+            continue
+        body[k] = v.isoformat() if isinstance(v, date) else v
+    try:
+        resp = requests.post(_url("/runs"), json=body, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.HTTPError as e:
+        if e.response is not None and e.response.status_code == 502:
+            detail = e.response.json().get("detail", {})
+            st.error(f"The run was created but could not be handed to Prefect: {detail.get('message', detail)}")
+            return {"run_id": detail.get("run_id"), "status": "failed"} if isinstance(detail, dict) else None
+        st.error(f"Request failed: {_error_detail(e.response)}")
+        return None
+    except requests.RequestException as e:
+        st.error(f"Could not reach the backend at {API_BASE_URL}: {e}")
+        return None
 
 
+def list_runs(limit: int = 50, status: Optional[str] = None) -> List[Dict]:
+    result = _get("/runs", limit=limit, status=status)
+    return result["runs"] if result else []
+
+
+def get_run(run_id: str) -> Optional[Dict]:
+    return _get(f"/runs/{run_id}")
+
+
+def get_run_log(run_id: str, status: Optional[str] = None, reason_code: Optional[str] = None,
+                limit: int = 200, offset: int = 0) -> Optional[Dict]:
+    return _get(f"/runs/{run_id}/log", status=status, reason_code=reason_code, limit=limit, offset=offset)
+
+
+def cancel_run(run_id: str) -> Optional[Dict]:
+    return _post(f"/runs/{run_id}/cancel")
+
+
+# ---------------------------------------------------------------------------
+# History
+# ---------------------------------------------------------------------------
 def get_history(source_type: Optional[str] = None) -> List[Dict]:
-    params = {}
-    if source_type and source_type != "All":
-        params["source_type"] = source_type
-    result = _get("/documents/history", **params)
+    result = _get("/documents/history", source_type=source_type if source_type != "All" else None)
     return result["documents"] if result else []
 
 
