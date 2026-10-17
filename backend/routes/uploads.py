@@ -11,7 +11,7 @@ from backend.schemas import UploadResponse
 
 router = APIRouter()
 
-MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024 ** 3)))
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(1024 ** 3)))
 
 
 def safe_name(name: str) -> str:
