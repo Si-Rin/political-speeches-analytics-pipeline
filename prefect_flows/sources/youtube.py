@@ -18,10 +18,14 @@ this adapter releases it itself when a download fails, so nothing is left behind
 from pathlib import Path
 import time
 from typing import Iterator, List
+import os
+from dotenv import load_dotenv
 
 from prefect_flows.collection.handles import TempFileHandle
 from prefect_flows.collection.workarea import WorkArea
 from prefect_flows.sources.base import BaseSource, Candidate
+
+load_dotenv()
 
 try:
     import yt_dlp
@@ -76,6 +80,13 @@ class YoutubeSource(BaseSource):
             "no_warnings": True,
             "noplaylist": True,
         }
+
+        pot_url = os.getenv("YTDLP_POT_URL")
+
+        if pot_url:
+            base_opts["extractor_args"] = {
+                "youtubepot-bgutilhttp": {"base_url": [pot_url]},
+            }
         # check if the urls are given explicitly as a list or in a file
         if len(self.urls) == 1 and Path(self.urls[0]).is_file():
             with open(self.urls[0], "r") as f:
