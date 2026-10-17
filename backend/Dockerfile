@@ -2,9 +2,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ffmpeg ca-certificates curl unzip \
+    && curl -fsSL https://deno.land/install.sh \
+       -o /tmp/install-deno.sh \
+    && DENO_INSTALL=/usr/local sh /tmp/install-deno.sh \
+    && deno --version \
+    && rm -f /tmp/install-deno.sh \
     && rm -rf /var/lib/apt/lists/*
+
 
 COPY backend/requirements.txt .
 
