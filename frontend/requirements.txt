@@ -2,3 +2,4 @@
 # Streamlit itself requires anyio>=4.0, hence the split.
 streamlit
 requests
+altair

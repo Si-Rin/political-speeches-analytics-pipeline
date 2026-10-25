@@ -116,6 +116,13 @@ services:
         condition: service_healthy
       prefect-deploy:
         condition: service_completed_successfully
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     environment:
       PREFECT_API_URL: http://prefect-server:4200/api
       MINIO_ENDPOINT: minio:9000
@@ -127,6 +134,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       YTDLP_POT_URL: http://pot-provider:4416
+      WHISPER_DEVICE: cuda
+      WHISPER_COMPUTE_TYPE: float16 
     working_dir: /app
     command: prefect worker start --pool default-pool
     volumes:
@@ -156,6 +165,10 @@ services:
       PREFECT_API_URL: http://prefect-server:4200/api
       PREFECT_FLOW_NAME: bronze-ingestion
       PREFECT_DEPLOYMENT_NAME: default
+      MINIO_ENDPOINT: minio:9000                  
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      YTDLP_POT_URL: http://pot-provider:4416    
     ports:
       - "8000:8000"
     healthcheck:

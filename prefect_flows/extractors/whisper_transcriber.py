@@ -1,11 +1,12 @@
 """faster-whisper transcription, model loaded once per worker process"""
 import re
+import os
 from typing import Optional
 from faster_whisper import WhisperModel
 
 WHISPER_MODEL_SIZE = "medium"
-WHISPER_DEVICE = "cpu"
-WHISPER_COMPUTE_TYPE = "int8"
+WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "auto")          # "cuda", "cpu", "auto"
+WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "")   # automated choice
 
 BASE_PROMPT = (
     "Speech by President Donald Trump. Political and governmental vocabulary: "
@@ -72,7 +73,12 @@ def resolve_language(raw_metadata: dict) -> str:
 def get_whisper_model() -> WhisperModel:
     global _model
     if _model is None:
-        _model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE)
+        device = WHISPER_DEVICE
+        if device == "auto":
+            import ctranslate2
+            device = "cuda" if ctranslate2.get_cuda_device_count() > 0 else "cpu"
+        compute = WHISPER_COMPUTE_TYPE or ("float16" if device == "cuda" else "int8")
+        _model = WhisperModel(WHISPER_MODEL_SIZE, device=device, compute_type=compute)
     return _model
 
 
