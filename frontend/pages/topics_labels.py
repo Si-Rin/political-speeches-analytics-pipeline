@@ -9,13 +9,61 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 import streamlit as st
 
-from api_client import get_topics, get_labels
+from api_client import get_labels, get_topics, get_topics_run_status, start_topics_run
 
 st.set_page_config(layout="wide")
 st.title("Topics & Labels")
 
 if st.button("Refresh"):
     st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Topic modeling control (replaces running gold_topics.py by hand)
+# ---------------------------------------------------------------------------
+RUN_STATES = {"queued": "⏳ Waiting to start", "running": "🔄 Running", "completed": "✅ Completed",
+              "failed": "❌ Failed", "cancelled": "⚪ Cancelled", "idle": "⚪ Never run"}
+REFRESH_SECONDS = 5
+
+first_status = get_topics_run_status()
+keep_refreshing = bool(first_status) and first_status["state"] in ("queued", "running")
+
+
+@st.fragment(run_every=f"{REFRESH_SECONDS}s" if keep_refreshing else None)
+def topics_control():
+    status = get_topics_run_status()
+    if not status:
+        return
+    running = status["state"] in ("queued", "running")
+    if keep_refreshing and not running:
+        st.rerun()                        # finished: refresh the whole page so the new topics appear
+
+    st.subheader("Compute topics")
+    st.caption("Topic modeling groups the whole corpus into themes. It needs enough processed documents and is recomputed "
+               "over all of them each time, so run it after you have collected a good batch.")
+    need = status["min_docs"]
+    c1, c2 = st.columns(2)
+    for col, label, n in ((c1, "Long speeches (500+ words)", status["long_form_docs"]),
+                          (c2, "Short posts (under 500 words)", status["short_form_docs"])):
+        col.metric(label, f"{n} / {need} needed")
+        col.progress(min(n / need, 1.0))
+    st.markdown(f"**Last run:** {RUN_STATES.get(status['state'], status['state'])}"
+                + (f" · started {str(status['started_at'])[:19].replace('T', ' ')}" if status.get("started_at") else "")
+                + (f" · finished {str(status['finished_at'])[:19].replace('T', ' ')}" if status.get("finished_at") else ""))
+    if status["state"] == "failed" and status.get("message"):
+        st.error(status["message"])
+    if running:
+        st.info(f"Topic modeling in progress (this can take several minutes). Refreshing every {REFRESH_SECONDS} seconds.")
+    elif not status["can_run"]:
+        st.warning(f"Not enough documents yet: at least {need} processed documents are needed in the long-speech or the "
+                   "short-post group. Collect more documents first.")
+    if st.button("Compute topics now", type="primary", disabled=running or not status["can_run"], key="start_topics"):
+        if start_topics_run():
+            st.rerun()
+
+
+topics_control()
+st.divider()
 
 st.subheader("BERTopic topics")
 st.caption(
@@ -26,7 +74,7 @@ st.caption(
 topics_data = get_topics()
 
 if not topics_data or not topics_data.get("topics"):
-    st.info("No topics computed yet — run gold_topics.py.")
+    st.info("No topics computed yet. Use “Compute topics now” above once enough documents are processed.")
 else:
     for corpus in ["long_form", "short_form"]:
         corpus_topics = [t for t in topics_data["topics"] if t["corpus"] == corpus]

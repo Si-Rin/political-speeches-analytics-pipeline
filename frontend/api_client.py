@@ -123,6 +123,29 @@ def cancel_run(run_id: str) -> Optional[Dict]:
     return _post(f"/runs/{run_id}/cancel")
 
 
+def _get_bytes(path: str, timeout: int = 600) -> Optional[bytes]:
+    try:
+        resp = requests.get(_url(path), timeout=timeout)
+        resp.raise_for_status()
+        return resp.content
+    except requests.HTTPError as e:
+        st.error(f"Download failed: {_error_detail(e.response)}")
+        return None
+    except requests.RequestException as e:
+        st.error(f"Could not reach the backend at {API_BASE_URL}: {e}")
+        return None
+
+
+def download_document(doc_id: int) -> Optional[bytes]:
+    """Raw Bronze file (video/audio/html/pdf)."""
+    return _get_bytes(f"/documents/{doc_id}/download")
+
+
+def download_transcript(doc_id: int) -> Optional[bytes]:
+    """Silver text / transcript as UTF-8 bytes."""
+    return _get_bytes(f"/documents/{doc_id}/transcript", timeout=60)
+
+
 # ---------------------------------------------------------------------------
 # History
 # ---------------------------------------------------------------------------
@@ -162,3 +185,20 @@ def get_emotions() -> Optional[Dict]:
 
 def get_entities(top_n: int = 15) -> Optional[Dict]:
     return _get("/analytics/entities", top_n=top_n)
+
+
+def get_corpus_summary(top_n: int = 15) -> Optional[Dict]:
+    return _get("/analytics/corpus", top_n=top_n)
+
+
+def retry_run(run_id: str) -> Optional[Dict]:
+    """Relaunch a failed/cancelled run with the same parameters; returns the NEW run ({run_id, status, ...})."""
+    return _post(f"/runs/{run_id}/retry")
+
+
+def get_topics_run_status() -> Optional[Dict]:
+    return _get("/analytics/topics/run")
+
+
+def start_topics_run() -> Optional[Dict]:
+    return _post("/analytics/topics/run")
