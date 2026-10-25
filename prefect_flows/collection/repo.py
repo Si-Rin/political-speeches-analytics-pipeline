@@ -97,8 +97,9 @@ class PostgresRepo:
     # ---- KnownUrls port (used by research sources in phase 4) ----------------------------------------
     def known_url(self, canonical_url: str, source_type: Optional[str] = None) -> bool:
         """Known if Bronze already holds this URL (raw or canonical form), in this format when a format is given."""
-        sql = "SELECT 1 FROM bronze.documents WHERE source_url = ANY(%s)"
-        params = [[canonical_url, canonical_url + "/"]]
+        sql = ("SELECT 1 FROM bronze.documents WHERE (source_url = ANY(%s)"
+               "OR raw_metadata->'collection'->>'canonical_url' = %s)")
+        params = [[canonical_url, canonical_url + "/"], canonical_url]
         if source_type:
             sql += " AND source_type = %s"
             params.append(source_type)

@@ -67,7 +67,7 @@ def _direct_url(p, deps):
 def _youtube(p, deps):
     from prefect_flows.sources.youtube import YoutubeSource
     return YoutubeSource(urls=p.urls, audio_only=p.audio_only, playlist_mode=p.playlist_mode,
-                         max_downloads=p.max_downloads, work=deps.work)
+                         max_downloads=p.max_downloads, work=deps.work, known_urls=deps.known_urls, recorder=deps.recorder)
 
 
 def _internet_archive(p, deps):
@@ -78,19 +78,19 @@ def _internet_archive(p, deps):
 def _miller_center(p, deps):
     from prefect_flows.sources.miller_center import MillerCenterSource
     return MillerCenterSource(urls=p.urls, start_url=p.start_url, max_depth=p.max_depth,
-                              crawl_delay=p.crawl_delay, request_timeout=p.request_timeout)
+                              crawl_delay=p.crawl_delay, request_timeout=p.request_timeout, known_urls=deps.known_urls, recorder=deps.recorder)
 
 
 def _ucsb(p, deps):
     from prefect_flows.sources.ucsb import UcsbSource
     return UcsbSource(listing_url=p.listing_url, link_text_filter=p.link_text_filter,
-                      max_documents=p.max_documents, crawl_delay=p.crawl_delay)
+                      max_documents=p.max_documents, crawl_delay=p.crawl_delay, known_urls=deps.known_urls, recorder=deps.recorder)
 
 
 def _web_crawl(p, deps):
     from prefect_flows.sources.web_scraping import WebCrawlSource
     return WebCrawlSource(seed_urls=p.seed_urls, keywords=p.keywords, allowed_domains=p.allowed_domains,
-                          max_depth=p.max_depth, max_pages=p.max_pages)
+                          max_depth=p.max_depth, max_pages=p.max_pages, known_urls=deps.known_urls, recorder=deps.recorder)
 
 
 for _spec in (

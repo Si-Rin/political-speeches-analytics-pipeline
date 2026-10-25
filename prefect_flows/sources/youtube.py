@@ -16,12 +16,16 @@ The scope travels with the Candidate (TempFileHandle): the flow releases it once
 this adapter releases it itself when a download fails, so nothing is left behind.
 """
 from pathlib import Path
+import re
 import time
+from urllib.parse import parse_qs, urlparse
 from typing import Iterator, List
 import os
 from dotenv import load_dotenv
 
+from prefect_flows.collection.enums import CandidateStatus
 from prefect_flows.collection.handles import TempFileHandle
+from prefect_flows.collection.recorder import DiscoveryEntry
 from prefect_flows.collection.workarea import WorkArea
 from prefect_flows.sources.base import BaseSource, Candidate
 
@@ -35,16 +39,40 @@ except ImportError as e:
     ) from e
 
 
+_YT_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")     # youtube video IDs (exp: https://www.youtube.com/watch?v=l1infKsQLr0 --> l1infKsQLr0)
+
+
+def canonical_youtube_url(url: str) -> str:
+    """https://www.youtube.com/watch?v=<id> for watch/youtu.be/shorts/embed/live URLs (tracking params, &t= dropped);
+    anything else (playlist entries with odd shapes, other hosts) is returned unchanged."""
+    try:
+        u = urlparse(url.strip())
+        host = (u.hostname or "").lower().removeprefix("www.").removeprefix("m.")
+        vid = None
+        if host == "youtu.be":
+            vid = u.path.lstrip("/").split("/")[0]
+        elif host in ("youtube.com", "music.youtube.com"):
+            if u.path == "/watch":
+                vid = (parse_qs(u.query).get("v") or [None])[0]
+            else:
+                m = re.match(r"^/(?:shorts|embed|live|v)/([^/?]+)", u.path)
+                vid = m.group(1) if m else None
+        if vid and _YT_ID.match(vid):
+            return f"https://www.youtube.com/watch?v={vid}"
+    except Exception:
+        pass
+    return url
+
+
 class YoutubeSource(BaseSource):
     def __init__(self, urls: List[str], work: WorkArea, playlist_mode: bool = False, max_downloads: int = None,
-                 audio_only: bool = False, delay_seconds: float = 2.0):
+                 audio_only: bool = False, delay_seconds: float = 2.0, known_urls: list = None, recorder=None):
         """
         urls: list of YouTube video URLs
         playlist_mode: if True, treats the URLs as playlists and downloads all videos in the playlist
         max_downloads: maximum number of videos to download (None for no limit)
-        audio_only: if True, downloads best audio track only (smaller,
-                    faster — use this if you only need the transcript and
-                    don't care about video)
+        audio_only: if True, downloads best audio track only (smaller, faster — use this if you only need the transcript and don't care about video)
+        errors: list of error messages encountered during download
         """
         self.urls = urls
         self.work = work                  # hands out one scope directory per download
@@ -52,6 +80,9 @@ class YoutubeSource(BaseSource):
         self.playlist_mode = playlist_mode
         self.max_downloads = max_downloads
         self.audio_only = audio_only
+        self.known_urls = known_urls      # port: known_url(canonical_url) -> bool (Bronze already has this video no matter the format)
+        self.recorder = recorder
+        self.errors = []
     
     def _extract_metadata(self, info: dict) -> dict:
             """Pull the fields Silver will need out of yt-dlp's raw info dict.
@@ -75,7 +106,8 @@ class YoutubeSource(BaseSource):
 
     def candidates(self) -> Iterator[Candidate]:
         base_opts = {
-            "format": "bestaudio/best" if self.audio_only else "best[ext=mp4]/best",
+            "format": "bestaudio/best" if self.audio_only else "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+            "merge_output_format": "mp4",
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
@@ -125,6 +157,15 @@ class YoutubeSource(BaseSource):
                 scope = self.work.scope("yt")
                 handed_over = False
                 try:
+                    entry_url = canonical_youtube_url(entry_url)
+                    # The checksum would not catch the content if the format differs, so we need to check the canonical url separately
+                    if self.known_urls is not None and self.known_urls.known_url(entry_url):
+                        print(f"[YoutubeSource] Skipping '{entry_url}': already ingested")
+                        if self.recorder is not None:
+                            self.recorder.record(DiscoveryEntry(
+                                source_name="youtube", source_url=entry_url, canonical_url=entry_url, status=CandidateStatus.KNOWN_URL_SKIPPED,
+                                detail="This video is already in Bronze (any format); skipped before download."))
+                        continue
                     opts = {**base_opts, "outtmpl": str(scope.path / "%(id)s.%(ext)s")}
                     with yt_dlp.YoutubeDL(opts) as ydl:
                         info = ydl.extract_info(entry_url, download=True)
@@ -135,6 +176,7 @@ class YoutubeSource(BaseSource):
 
                     candidate = Candidate(
                         source_url=entry_url,
+                        canonical_url=entry_url,
                         source_type="audio" if self.audio_only else "video",
                         file_name=downloaded_path.name,
                         handle=TempFileHandle(downloaded_path, scope),
@@ -147,6 +189,7 @@ class YoutubeSource(BaseSource):
                     failed_count += 1
                     # one bad/unavailable url shouldnt stop the whole batch
                     print(f"[YoutubeSource] Failed to download '{entry_url}': {type(e).__name__}: {e}")
+                    self.errors.append(f"{entry_url}: {type(e).__name__}: {e}")
                     continue
                 finally:
                     if not handed_over:

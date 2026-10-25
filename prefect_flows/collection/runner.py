@@ -25,6 +25,9 @@ def run_collection(run_id: str, source_name: str, params: dict, deps: Deps, dry_
                     store=deps.store, bronze=deps.repo, recorder=deps.recorder, dry_run=dry_run)
                 if logger:
                     logger.info(f"{status.value}: {candidate.source_url}")
+            if spec.mode.value == "single" and not deps.recorder.entries:
+                errors = getattr(source, "errors", [])
+                raise RuntimeError("The source produced no document: " + ("; ".join(errors) or "download failed (see worker logs)"))
 
     summary = deps.recorder.summary()
     if logger:

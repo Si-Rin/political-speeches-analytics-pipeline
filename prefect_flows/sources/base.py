@@ -10,7 +10,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Iterator, Optional
 
+from prefect_flows.collection.enums import CandidateStatus
 from prefect_flows.collection.handles import ContentHandle
+from prefect_flows.collection.recorder import DiscoveryEntry
 from prefect_flows.collection.urls import canonicalize_url
 
 
@@ -48,3 +50,28 @@ class BaseSource(ABC):
         it releases itself; whatever it yields, the consumer releases (Candidate.__exit__).
         """
         raise NotImplementedError
+
+
+class KnownUrlGate:
+    """
+    Lets a source skip URLs Bronze already holds WHILE DISCOVERING, so a "max N" limit counts only NEW documents:
+    `if gate.skip(url): continue` placed before the source increments its counter. The skip is written to the discovery log
+    (known_url_skipped) so the run still explains what it saw. With no port (tests, ad-hoc use) nothing is ever skipped.
+    The pipeline keeps its own URL check as a safety net for sources that do not use the gate.
+    """
+
+    def __init__(self, known_urls=None, recorder=None, source_name: str = ""):
+        self.known_urls, self.recorder, self.source_name = known_urls, recorder, source_name
+
+    def skip(self, url: str, *, title: Optional[str] = None, listing_url: Optional[str] = None) -> bool:
+        if self.known_urls is None or not url.lower().startswith(("http://", "https://")):
+            return False
+        canonical = canonicalize_url(url)
+        if not self.known_urls.known_url(canonical):
+            return False
+        if self.recorder is not None:
+            self.recorder.record(DiscoveryEntry(
+                source_name=self.source_name, source_url=url, canonical_url=canonical, status=CandidateStatus.KNOWN_URL_SKIPPED,
+                title_hint=title, listing_url=listing_url,
+                detail="Already in Bronze; skipped (does not count toward the limit)."))
+        return True

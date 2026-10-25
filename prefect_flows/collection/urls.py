@@ -1,4 +1,6 @@
 """URL normalization shared by dedup, the discovery log and the known-URL check."""
+import hashlib
+import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 _TRACKING_PARAMS = {"fbclid", "gclid", "mc_cid", "mc_eid", "igshid", "ref", "ref_src"}
@@ -25,3 +27,21 @@ def canonicalize_url(url: str) -> str:
         if not k.lower().startswith("utm_") and k.lower() not in _TRACKING_PARAMS
     ))
     return urlunsplit((parts.scheme.lower(), userinfo + host, path, query, ""))
+
+def safe_file_name(url: str, ext: str = ".html", max_stem: int = 80) -> str:
+    """
+    Extract the last path segment of a URL and convert it to a filesystem-safe file name, with an optional extension.
+
+    If the last path segment is too long or if the URL has a query string, append a short hash of the full URL to avoid collisions.
+    
+    The resulting file name is limited to 255 bytes to avoid filesystem errors.
+    """
+    parts = urlsplit((url or "").strip())
+    segment = parts.path.rstrip("/").rsplit("/", 1)[-1]
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", segment).strip("-.") or "index"
+    if stem.lower().endswith(ext.lower()):
+        stem = stem[: -len(ext)] or "index"
+    cut = len(stem) > max_stem
+    if cut or parts.query:
+        stem = f"{stem[:max_stem].rstrip('-.') or 'index'}_{hashlib.sha1(canonicalize_url(url).encode('utf-8')).hexdigest()[:8]}"
+    return f"{stem}{ext}"

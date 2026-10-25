@@ -4,12 +4,16 @@ Run-scoped working directory with per-candidate scope directories.
 Directories (not files) are handed out because tools such as yt-dlp leave .part files and merge intermediates.
 Ownership rule: the producer releases what it does not yield, the consumer releases what it receives.
 """
+import hashlib
 import os
 import shutil
 import tempfile
 import time
 from pathlib import Path
 from typing import Optional
+
+
+MAX_NAME_BYTES = 200        # 255 bytes per name on Linux/ext4; keep headroom for a hash suffix
 
 
 class WorkAreaFull(RuntimeError):
@@ -33,6 +37,11 @@ class Scope:
         self.released = False
 
     def path_for(self, name: str) -> Path:
+        name = Path(name).name                  # never escape the scope (when name is a path, take only the last component)
+        if len(name.encode("utf-8")) > MAX_NAME_BYTES:      # for a file named after a long URL: keep the extension, cut the stem
+            suffix = Path(name).suffix[:16]
+            stem = name[: len(name) - len(suffix)].encode("utf-8")[: MAX_NAME_BYTES - len(suffix.encode("utf-8")) - 9].decode("utf-8", "ignore")
+            name = f"{stem}_{hashlib.sha1(name.encode('utf-8')).hexdigest()[:8]}{suffix}"
         return self.path / Path(name).name      # never escape the scope
 
     def size(self) -> int:

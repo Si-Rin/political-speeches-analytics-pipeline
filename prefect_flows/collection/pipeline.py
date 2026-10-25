@@ -54,6 +54,9 @@ def ingest_candidate(candidate: Candidate, *, source_name: str, run_id: str, wor
         return status
 
     with candidate:                                   # releases the handle on every path
+        # Skip the candidate if its canonical url is already known in bronze
+        if candidate.source_url.lower().startswith(("http://", "https://")) and bronze.known_url(candidate.canonical_url):
+            return record(CandidateStatus.KNOWN_URL_SKIPPED, detail="This URL is already in Bronze; skipped before download.")
         if dry_run:
             return record(CandidateStatus.PREFILTER_PASSED)
         try:
@@ -63,18 +66,18 @@ def ingest_candidate(candidate: Candidate, *, source_name: str, run_id: str, wor
                     checksum, size = sha256_of(path)
                     work.check_budget()
                 except FetchError as exc:
-                    return record(CandidateStatus.FETCH_FAILED, reason=exc.reason, detail=exc.detail)
+                    return record(CandidateStatus.FETCH_FAILED, reason_code=exc.reason, detail=exc.detail)
                 except Exception as exc:
                     return record(CandidateStatus.FETCH_FAILED, detail=f"{type(exc).__name__}: {exc}")
 
                 if bronze.checksum_exists(checksum):
-                    return record(CandidateStatus.DUPLICATE_CONTENT, reason=ReasonCode.CHECKSUM_EXISTS)
+                    return record(CandidateStatus.DUPLICATE_CONTENT, reason_code=ReasonCode.CHECKSUM_EXISTS)
 
                 object_key = f"{checksum}{Path(candidate.file_name).suffix}"
                 try:
                     store.put(path, object_key, candidate.mime_type or "application/octet-stream")
                 except Exception as exc:
-                    return record(CandidateStatus.INGEST_FAILED, reason=ReasonCode.UPLOAD_FAILED, detail=str(exc))
+                    return record(CandidateStatus.INGEST_FAILED, reason_code=ReasonCode.UPLOAD_FAILED, detail=str(exc))
                 try:
                     doc_id: Optional[int] = bronze.insert_document(
                         source_url=candidate.source_url, source_type=candidate.source_type,
@@ -82,9 +85,9 @@ def ingest_candidate(candidate: Candidate, *, source_name: str, run_id: str, wor
                         checksum=checksum, raw_metadata=provenance(candidate, source_name, run_id),
                         storage_path=object_key, run_id=run_id)
                 except Exception as exc:
-                    return record(CandidateStatus.INGEST_FAILED, reason=ReasonCode.DB_ERROR, detail=str(exc))
+                    return record(CandidateStatus.INGEST_FAILED, reason_code=ReasonCode.DB_ERROR, detail=str(exc))
                 if doc_id is None:                    # lost a race with another writer of the same bytes
-                    return record(CandidateStatus.DUPLICATE_CONTENT, reason=ReasonCode.CHECKSUM_EXISTS)
+                    return record(CandidateStatus.DUPLICATE_CONTENT, reason_code=ReasonCode.CHECKSUM_EXISTS)
                 return record(CandidateStatus.INGESTED, doc_id=doc_id)
         except Exception as exc:                      # work-area/budget/bookkeeping problems
             return record(CandidateStatus.INGEST_FAILED, detail=f"{type(exc).__name__}: {exc}")
