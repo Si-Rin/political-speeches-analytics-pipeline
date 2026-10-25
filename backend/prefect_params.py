@@ -8,7 +8,8 @@ from typing import Any, Dict, Optional
 
 from backend.schemas.common import DownloadFormat, Mode, SourceName
 from backend.schemas.sources import (
-    SOURCE_MODE, DirectUrlRequest, InternetArchiveRequest, LocalFileRequest, WebCrawlRequest, YoutubeRequest,
+    SOURCE_MODE, DirectUrlRequest, InternetArchiveRequest, LocalFileRequest, 
+     MillerCenterRequest, UcsbRequest, WebCrawlRequest, YoutubeRequest,
 )
 
 
@@ -47,6 +48,14 @@ def to_prefect_params(req) -> PrefectPayload:
         name = SourceName.WEB_CRAWL
         params = {"seed_urls": req.seed_urls, "keywords": req.keywords, "allowed_domains": req.allowed_domains,
                   "max_depth": req.max_depth, "max_pages": req.max_pages}
+        return PrefectPayload(name, SOURCE_MODE[name], params)
+    elif isinstance(req, MillerCenterRequest):
+        name = SourceName.MILLER_CENTER
+        params = {k: v for k, v in {"urls": req.urls, "start_url": req.start_url, "max_depth": req.max_depth}.items() if v is not None}
+        return PrefectPayload(name, SOURCE_MODE[name], params)
+    elif isinstance(req, UcsbRequest):
+        name = SourceName.UCSB
+        params = {"listing_url": req.listing_url, "link_text_filter": req.link_text_filter, "max_documents": req.max_documents}
         return PrefectPayload(name, SOURCE_MODE[name], params)
     else:
         raise TypeError(f"Unsupported request type: {type(req).__name__}")

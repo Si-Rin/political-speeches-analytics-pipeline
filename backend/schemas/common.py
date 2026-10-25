@@ -18,6 +18,8 @@ class SourceName(str, Enum):
     DIRECT_URL = "direct_url"
     YOUTUBE = "youtube"
     INTERNET_ARCHIVE = "internet_archive"
+    MILLER_CENTER = "miller_center"
+    UCSB = "ucsb"
     WEB_CRAWL = "web_crawl"
 
 
@@ -41,8 +43,7 @@ class RunStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-TERMINAL_STATUSES = frozenset({RunStatus.COMPLETED, RunStatus.COMPLETED_WITH_ERRORS,
-                               RunStatus.FAILED, RunStatus.CANCELLED})
+TERMINAL_STATUSES = frozenset({RunStatus.COMPLETED, RunStatus.COMPLETED_WITH_ERRORS, RunStatus.FAILED, RunStatus.CANCELLED})
 
 
 class CandidateStatus(str, Enum):

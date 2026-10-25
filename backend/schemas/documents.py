@@ -19,9 +19,6 @@ class ProbeRequest(BaseModel):
 class ProbeResponse(BaseModel):
     ok: bool
     detected_title: Optional[str] = None
-    detected_file_name: Optional[str] = None
-    detected_mime_type: Optional[str] = None
-    detected_size_bytes: Optional[int] = None
     detected_duration_seconds: Optional[float] = None
     detected_uploader: Optional[str] = None
     raw_metadata: Optional[Dict] = None

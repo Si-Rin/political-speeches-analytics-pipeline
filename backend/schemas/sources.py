@@ -6,7 +6,7 @@ IA exclusions) never appear here: they live in the Prefect-side adapters.
 from datetime import date
 from typing import Annotated, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.schemas.common import ContentType, DownloadFormat, Mode, SourceName
 
@@ -86,8 +86,39 @@ class WebCrawlRequest(_Request):
         return cleaned
 
 
-RunRequest = Annotated[
-    Union[LocalFileRequest, DirectUrlRequest, YoutubeRequest, InternetArchiveRequest, WebCrawlRequest],
+class MillerCenterRequest(_Request):
+    source: Literal["miller_center"]
+    urls: Optional[List[str]] = Field(default=None, max_length=50, description="Specific speech pages")
+    start_url: Optional[str] = Field(default=None, description="A listing page to crawl from")
+    max_depth: int = Field(default=100, ge=1, le=1000)
+
+    @field_validator("urls")
+    @classmethod
+    def _urls(cls, v):
+        return [_http_url(u) for u in v] if v else None
+
+    @field_validator("start_url")
+    @classmethod
+    def _start(cls, v):
+        return _http_url(v) if v else None
+
+    @model_validator(mode="after")
+    def _needs_a_start(self):
+        if not self.urls and not self.start_url:
+            raise ValueError("urls or start_url is required")
+        return self
+
+
+class UcsbRequest(_Request):
+    source: Literal["ucsb"]
+    listing_url: str
+    link_text_filter: str = Field(default="tweets of", min_length=1, max_length=200)
+    max_documents: int = Field(default=1, ge=1, le=500)
+    _check_url = field_validator("listing_url")(_http_url)
+
+
+RunRequest = Annotated[ 
+    Union[LocalFileRequest, DirectUrlRequest, YoutubeRequest, InternetArchiveRequest, WebCrawlRequest, MillerCenterRequest, UcsbRequest],
     Field(discriminator="source"),
 ]
 
@@ -98,4 +129,6 @@ SOURCE_MODE = {
     SourceName.YOUTUBE: Mode.SINGLE,
     SourceName.INTERNET_ARCHIVE: Mode.SINGLE,
     SourceName.WEB_CRAWL: Mode.ARCHIVE,
+    SourceName.MILLER_CENTER: Mode.ARCHIVE,
+    SourceName.UCSB: Mode.ARCHIVE,
 }
