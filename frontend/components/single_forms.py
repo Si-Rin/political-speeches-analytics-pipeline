@@ -17,16 +17,22 @@ def _show_probe_result(result: dict) -> None:
         for w in result.get("warnings", []):
             st.error(w)
         return
-    cols = st.columns(3)
-    cols[0].metric("Title", result.get("detected_title") or "—")
-    cols[1].metric("File name", result.get("detected_file_name") or "—")
-    cols[2].metric("MIME type", result.get("detected_mime_type") or "—")
-    cols2 = st.columns(3)
+
     size = result.get("detected_size_bytes")
-    cols2[0].metric("Size", f"{size / 1_000_000:.1f} MB" if size else "—")
     duration = result.get("detected_duration_seconds")
-    cols2[1].metric("Duration", f"{duration / 60:.1f} min" if duration else "—")
-    cols2[2].metric("Uploader", result.get("detected_uploader") or "—")
+    fields = {
+        "Title": result.get("detected_title"),
+        "Uploader": result.get("detected_uploader"),
+        "Duration": f"{duration / 60:.1f} min" if duration else None,
+        "File name": result.get("detected_file_name"),
+        "MIME type": result.get("detected_mime_type"),
+        "Size": f"{size / 1_000_000:.1f} MB" if size else None,
+    }
+    shown = {k: v for k, v in fields.items() if v}
+    if shown:
+        cols = st.columns(min(len(shown), 3))
+        for i, (label, value) in enumerate(shown.items()):
+            cols[i % len(cols)].metric(label, value)
     for w in result.get("warnings", []):
         st.warning(w)
 

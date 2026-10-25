@@ -52,6 +52,48 @@ def render_web_crawl() -> Optional[dict]:
     return run
 
 
+def render_miller_center() -> Optional[dict]:
+    st.caption("Presidential speeches from millercenter.org: give speech page URLs, or the speeches listing page (filters in the URL, e.g. one president, are kept; all its pages are followed).")
+    with st.form("archive_miller_center"):
+        urls_raw = st.text_area("Speech page URL(s)", help="One per line (optional if a listing page is given).", key="mc_urls")
+        start_url = st.text_input("Listing page (optional)", placeholder="https://millercenter.org/the-presidency/presidential-speeches", key="mc_start")
+        max_depth = st.number_input("Max NEW speeches to collect", min_value=1, max_value=1000, value=100, step=1, key="mc_depth", help="Speeches already collected are skipped and do not count: the crawl keeps going through the listing until this many new ones are found, or the listing ends.")
+        submitted = st.form_submit_button("Start collection", type="primary")
+    if not submitted:
+        return None
+    urls = [u.strip() for u in urls_raw.splitlines() if u.strip()]
+    if not urls and not start_url.strip():
+        st.warning("Provide speech URL(s) or a listing page.")
+        return None
+    with st.spinner("Starting collection..."):
+        run = api_client.create_run("miller_center", urls=urls or None, start_url=start_url.strip() or None, max_depth=int(max_depth))
+    if run and run.get("status") != "failed":
+        st.success(f"Collection started (run `{run['run_id']}`). Follow it on the Runs page.")
+    return run
+
+
+def render_ucsb() -> Optional[dict]:
+    st.caption("American Presidency Project (presidency.ucsb.edu): a search/listing URL; keeps links whose text matches the filter.")
+    with st.form("archive_ucsb"):
+        listing_url = st.text_input("Listing URL", placeholder="https://www.presidency.ucsb.edu/...", key="ucsb_url")
+        link_text_filter = st.text_input("Link text filter", value="tweets of", key="ucsb_filter")
+        max_documents = st.number_input("Max NEW documents", min_value=1, max_value=500, value=10, step=1, key="ucsb_max", help="Pages already collected are skipped and do not count toward this limit.")
+        submitted = st.form_submit_button("Start collection", type="primary")
+    if not submitted:
+        return None
+    if not listing_url.strip():
+        st.warning("Enter a listing URL.")
+        return None
+    with st.spinner("Starting collection..."):
+        run = api_client.create_run("ucsb", listing_url=listing_url.strip(), link_text_filter=link_text_filter.strip() or "tweets of",
+                                    max_documents=int(max_documents))
+    if run and run.get("status") != "failed":
+        st.success(f"Collection started (run `{run['run_id']}`). Follow it on the Runs page.")
+    return run
+
+
 RENDERERS = {
+    "Miller Center": render_miller_center,
+    "UCSB": render_ucsb,
     "Web crawl (Advanced)": render_web_crawl,
 }
