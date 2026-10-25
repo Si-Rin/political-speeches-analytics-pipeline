@@ -36,8 +36,10 @@ def get_all_documents(doc_ids: Optional[list[int]] = None) -> list[dict]:
             base = """
                 SELECT s.doc_id, s.transcript, s.word_count
                 FROM silver.text s
+                JOIN bronze.documents b ON b.doc_id = s.doc_id
                 WHERE s.status_processing = 'success'
-                  AND s.transcript IS NOT NULL
+                AND s.transcript IS NOT NULL
+                AND b.excluded = FALSE
             """
             if doc_ids:
                 cur.execute(base + " AND s.doc_id = ANY(%s) ORDER BY s.doc_id", (doc_ids,))

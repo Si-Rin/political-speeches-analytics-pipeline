@@ -8,7 +8,7 @@ CORS only applies to browser-originated cross-origin requests, so it's a non-iss
 """
 from fastapi import FastAPI
 
-from backend.routes import analytics, documents, runs, status, uploads
+from backend.routes import analytics, documents, runs, status, topics_run, uploads
 
 app = FastAPI(title="Political Speeches Analytics — Collection API")
 
@@ -17,6 +17,7 @@ app.include_router(uploads.router, tags=["uploads"])
 app.include_router(documents.router, tags=["documents"])
 app.include_router(status.router, tags=["status"])
 app.include_router(analytics.router, tags=["analytics"])
+app.include_router(topics_run.router, tags=["analytics"])
 
 
 @app.get("/health")

@@ -1,6 +1,6 @@
 """Analytics models."""
 from datetime import date
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -125,3 +125,40 @@ class EntitiesResponse(BaseModel):
     persons: List[EntityCount]
     locations: List[EntityCount]
     groups: List[EntityCount]
+
+
+# ---------------------------------------------------------------------------
+# Analytics: Corpus summary (lexical / rhetorical / affective aggregates over every analysed document)
+# ---------------------------------------------------------------------------
+class WordCount(BaseModel):
+    word: str
+    count: int
+
+
+class PhraseCount(BaseModel):
+    phrase: str
+    count: int
+
+
+class OppositionTotal(BaseModel):
+    pair: str            # "word1 vs word2"
+    left: str
+    right: str
+    left_count: int
+    right_count: int
+
+
+class CorpusSummaryResponse(BaseModel):
+    documents_analyzed: int
+    total_words: int
+    avg_ttr: Optional[float] = None                   # mean type-token ratio
+    avg_sentence_length: Optional[float] = None       # mean words / sentence
+    sentiment_scores: Dict[str, float] = {}           # mean per-document score of each sentiment label
+    emotion_scores: Dict[str, float] = {}             # mean per-document score of each emotion
+    label_distribution: List[LabelCount] = []         # dominant zero-shot label per document, all analysed documents
+    pronoun_ratios: Dict[str, float] = {}             # mean per 1,000 words
+    top_words: List[WordCount] = []
+    top_bigrams: List[PhraseCount] = []
+    top_trigrams: List[PhraseCount] = []
+    top_repetitions: List[PhraseCount] = []
+    oppositions: List[OppositionTotal] = []

@@ -23,6 +23,7 @@ from backend.schemas import (
     SentimentResponse, SentimentCount, SentimentOverTime,
     EmotionsResponse, EmotionCount,
     EntitiesResponse, EntityCount,
+    CorpusSummaryResponse, WordCount, PhraseCount, OppositionTotal,
 )
 
 router = APIRouter()
@@ -310,3 +311,88 @@ def get_entities(top_n: int = 15):
         return [EntityCount(text=t, count=c) for t, c in counter.most_common(top_n)]
 
     return EntitiesResponse(persons=_top(persons), locations=_top(locations), groups=_top(groups))
+
+
+# ---------------------------------------------------------------------------
+# Corpus summary
+# ---------------------------------------------------------------------------
+def _mean_scores(score_dicts) -> dict:
+    """Mean of each key across documents (a document missing a key counts as 0 for it)."""
+    score_dicts = [d for d in score_dicts if d]
+    if not score_dicts:
+        return {}
+    keys = {k for d in score_dicts for k in d}
+    return {k: round(sum(d.get(k, 0.0) for d in score_dicts) / len(score_dicts), 4) for k in keys}
+
+
+def aggregate_corpus(rows, top_n: int = 15) -> CorpusSummaryResponse:
+    """rows: iterable of (sentiment, emotions, labels, lex_metrics, syntactic_metrics) JSON dicts (any may be None).
+    Pure function (no DB) so the aggregation is unit-testable."""
+    rows = list(rows)
+    words, bigrams, trigrams, reps = Counter(), Counter(), Counter(), Counter()
+    opp = defaultdict(lambda: [0, 0])
+    ttrs, sent_lengths, pronouns, label_counter = [], [], [], Counter()
+    total_words, analysed = 0, 0
+
+    for sentiment, emotions, labels, lex, syn in rows:
+        lex, syn = lex or {}, syn or {}
+        if sentiment or emotions or labels or lex or syn:
+            analysed += 1
+        total_words += int(lex.get("total_words") or 0)
+        ttr = (lex.get("lexical_diversity") or {}).get("ttr")
+        if ttr is not None:
+            ttrs.append(ttr)
+        if lex.get("pronoun_ratios"):
+            pronouns.append(lex["pronoun_ratios"])
+        for item in lex.get("top_content_words") or []:
+            words[item["word"]] += item.get("count", 1)
+        for item in lex.get("bigrams") or []:
+            bigrams[item["phrase"]] += item.get("count", 1)
+        for item in lex.get("trigrams") or []:
+            trigrams[item["phrase"]] += item.get("count", 1)
+        for item in lex.get("repetitions") or []:
+            reps[item["phrase"]] += item.get("count", 1)
+        for o in lex.get("oppositions") or []:
+            left, right = o["pair"]
+            opp[(left, right)][0] += o["counts"][0]
+            opp[(left, right)][1] += o["counts"][1]
+        asl = (syn.get("speech_stats") or {}).get("avg_sentence_length")
+        if asl is not None:
+            sent_lengths.append(asl)
+        dom = _dominant_label(labels)
+        if dom:
+            label_counter[dom] += 1
+
+    n_labels = sum(label_counter.values())
+    return CorpusSummaryResponse(
+        documents_analyzed=analysed,
+        total_words=total_words,
+        avg_ttr=round(sum(ttrs) / len(ttrs), 4) if ttrs else None,
+        avg_sentence_length=round(sum(sent_lengths) / len(sent_lengths), 2) if sent_lengths else None,
+        sentiment_scores=_mean_scores([(r[0] or {}).get("scores") for r in rows]),
+        emotion_scores=_mean_scores([(r[1] or {}).get("scores") for r in rows]),
+        label_distribution=[LabelCount(label=l, count=c, pct=round(100 * c / n_labels, 1)) for l, c in label_counter.most_common()],
+        pronoun_ratios=_mean_scores(pronouns),
+        top_words=[WordCount(word=w, count=c) for w, c in words.most_common(top_n)],
+        top_bigrams=[PhraseCount(phrase=w, count=c) for w, c in bigrams.most_common(top_n)],
+        top_trigrams=[PhraseCount(phrase=w, count=c) for w, c in trigrams.most_common(top_n)],
+        top_repetitions=[PhraseCount(phrase=w, count=c) for w, c in reps.most_common(top_n)],
+        oppositions=[OppositionTotal(pair=f"{l} vs {r}", left=l, right=r, left_count=c[0], right_count=c[1])
+                     for (l, r), c in sorted(opp.items(), key=lambda kv: -(kv[1][0] + kv[1][1]))],
+    )
+
+
+@router.get("/analytics/corpus", response_model=CorpusSummaryResponse)
+def get_corpus_summary(top_n: int = 15):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT g.sentiment, g.emotions, g.labels, g.lex_metrics, g.syntactic_metrics
+                   FROM gold.analytics g JOIN bronze.documents b ON b.doc_id = g.doc_id
+                   WHERE b.excluded = FALSE"""
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return aggregate_corpus(rows, top_n=top_n)

@@ -15,7 +15,7 @@ from backend.schemas import PipelineStatus, PipelineStatusResponse, GoldModuleSt
 router = APIRouter()
 
 
-# Gold analytical modules : {"Module identifier by API" : "corresponding column in gold.analytics"}
+# Gold analytical modules : {"Module identifier by API" : "corresponding column in gold.analytics"} (topics / keywords are corpus-level --> not part of a document's pipeline status)
 GOLD_MODULES = {
     "lexical": "lex_metrics",
     "syntactic": "syntactic_metrics",
@@ -23,8 +23,6 @@ GOLD_MODULES = {
     "sentiment": "sentiment",
     "emotions": "emotions",
     "labels": "labels",
-    "topics": "topics",
-    "keywords": "keywords",
 }
 
 
