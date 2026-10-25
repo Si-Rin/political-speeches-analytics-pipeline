@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+from backend.schemas.common import SourceName
 from fastapi import APIRouter, HTTPException, Query
 
 from backend import pipeline_runner, reconcile, runs_repo, storage
@@ -13,6 +14,21 @@ from backend.schemas import (
 )
 
 router = APIRouter()
+
+RETRYABLE_STATUSES = (RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.COMPLETED_WITH_ERRORS)
+
+
+def _submit(mode: str, source_name: str, params: dict, params_version: int, dry_run: bool) -> RunCreated:
+    """Record the run and hand it to Prefect (shared by create and retry)."""
+    run_id = str(uuid.uuid4())
+    runs_repo.create_run(run_id, mode, source_name, params, params_version, dry_run)
+    try:
+        prefect_id = pipeline_runner.create_flow_run(run_id, source_name, params, params_version, dry_run)
+    except pipeline_runner.PrefectError as exc:
+        runs_repo.mark_terminal(run_id, RunStatus.FAILED, str(exc))
+        raise HTTPException(status_code=502, detail={"run_id": run_id, "message": str(exc)})
+    runs_repo.set_prefect_id(run_id, prefect_id)
+    return RunCreated(run_id=run_id, status=RunStatus.QUEUED, prefect_flow_run_id=prefect_id)
 
 
 def _reconciled(run: dict) -> dict:
@@ -39,15 +55,25 @@ def create_run(req: RunRequest):
             raise HTTPException(status_code=422, detail="Unknown staging_key: upload the file again (staged files expire).")
 
     payload = to_prefect_params(req)
-    run_id = str(uuid.uuid4())
-    runs_repo.create_run(run_id, payload.mode.value, payload.source_name.value, payload.params, PARAMS_VERSION, req.dry_run)
-    try:
-        prefect_id = pipeline_runner.create_flow_run(run_id, payload.source_name.value, payload.params, PARAMS_VERSION, req.dry_run)
-    except pipeline_runner.PrefectError as exc:
-        runs_repo.mark_terminal(run_id, RunStatus.FAILED, str(exc))
-        raise HTTPException(status_code=502, detail={"run_id": run_id, "message": str(exc)})
-    runs_repo.set_prefect_id(run_id, prefect_id)
-    return RunCreated(run_id=run_id, status=RunStatus.QUEUED, prefect_flow_run_id=prefect_id)
+    return _submit(payload.mode.value, payload.source_name.value, payload.params, PARAMS_VERSION, req.dry_run)
+
+
+@router.post("/runs/{run_id}/retry", response_model=RunCreated, status_code=202)
+def retry_run(run_id: uuid.UUID):
+    """Start a NEW run with exactly the parameters of a failed / cancelled / partly failed run."""
+    run = runs_repo.get_run(str(run_id))
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if RunStatus(run["status"]) not in RETRYABLE_STATUSES:
+        raise HTTPException(status_code=409, detail=f"Only failed, cancelled or partly failed runs can be relaunched (this run is {run['status']}).")
+    if run["source_name"] == SourceName.LOCAL_FILE.value:
+        try:
+            found = storage.staging_exists((run["params"] or {}).get("staging_key", ""))
+        except storage.StorageUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+        if not found:
+            raise HTTPException(status_code=422, detail="The uploaded file is no longer available: upload it again from the Collection page.")
+    return _submit(run["mode"], run["source_name"], run["params"], run["params_version"], run["dry_run"])
 
 
 @router.get("/runs", response_model=RunListResponse)
@@ -67,12 +93,10 @@ def get_run(run_id: uuid.UUID):
 
 
 @router.get("/runs/{run_id}/log", response_model=RunLogResponse)
-def get_run_log(run_id: uuid.UUID, status: Optional[CandidateStatus] = None, reason_code: Optional[ReasonCode] = None,
-                limit: int = Query(200, ge=1, le=1000), offset: int = Query(0, ge=0)):
+def get_run_log(run_id: uuid.UUID, status: Optional[CandidateStatus] = None, reason_code: Optional[ReasonCode] = None, limit: int = Query(200, ge=1, le=1000), offset: int = Query(0, ge=0)):
     if runs_repo.get_run(str(run_id)) is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    total, rows = runs_repo.log_rows(str(run_id), status.value if status else None,
-                                     reason_code.value if reason_code else None, limit, offset)
+    total, rows = runs_repo.log_rows(str(run_id), status.value if status else None, reason_code.value if reason_code else None, limit, offset)
     return RunLogResponse(total=total, items=rows)
 
 

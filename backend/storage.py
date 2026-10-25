@@ -7,6 +7,7 @@ from minio.error import S3Error
 
 STAGING_BUCKET = os.environ.get("MINIO_STAGING_BUCKET", "staging")
 STAGING_EXPIRY_DAYS = int(os.environ.get("MINIO_STAGING_EXPIRY_DAYS", "1"))
+BRONZE_BUCKET = os.environ.get("MINIO_BRONZE_BUCKET", "bronze")
 
 
 class StorageUnavailable(RuntimeError):
@@ -55,5 +56,17 @@ def staging_exists(key: str, client: Optional[Minio] = None) -> bool:
         if exc.code in ("NoSuchKey", "NoSuchBucket"):
             return False
         raise StorageUnavailable(f"Could not reach object storage: {exc}") from exc
+    except OSError as exc:
+        raise StorageUnavailable(f"Could not reach object storage: {exc}") from exc
+
+
+def open_bronze(storage_path: str, client: Optional[Minio] = None):
+    """Open a Bronze object for streaming (caller must close() and release_conn() the response)."""
+    try:
+        return (client or get_client()).get_object(BRONZE_BUCKET, storage_path)
+    except S3Error as exc:
+        if exc.code in ("NoSuchKey", "NoSuchBucket"):
+            raise FileNotFoundError(storage_path) from exc
+        raise StorageUnavailable(f"Could not read from object storage: {exc}") from exc
     except OSError as exc:
         raise StorageUnavailable(f"Could not reach object storage: {exc}") from exc
