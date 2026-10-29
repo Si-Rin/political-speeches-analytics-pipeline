@@ -91,8 +91,11 @@ services:
     working_dir: /app
     command: >
       /bin/sh -c "
-      prefect work-pool create default-pool --type process || true &&
-      prefect --no-prompt deploy prefect_flows/bronze_ingest.py:ingest_bronze --name default --pool default-pool --work-queue default"
+      prefect work-pool create ingestion-pool --type process || true &&
+      prefect work-pool create gold-pool --type process || true &&
+      prefect --no-prompt deploy prefect_flows/bronze_ingest.py:ingest_bronze --name default --pool ingestion-pool --work-queue default &&
+      prefect --no-prompt deploy prefect_flows/gold_topics.py:ingest_gold_topics --name default --pool gold-pool --work-queue default
+      "
     volumes:
       - .:/app
 
@@ -103,27 +106,18 @@ services:
     restart: unless-stopped
     init: true
 
-  prefect-worker:
+  ingestion-worker:
     build:
       context: .
       dockerfile: prefect_flows/Dockerfile
-    container_name: political-speeches-prefect-worker
+    container_name: political-speeches-ingestion-worker
     restart: unless-stopped
     depends_on:
-      pot-provider:
-        condition: service_started
       prefect-server:
         condition: service_healthy
       prefect-deploy:
         condition: service_completed_successfully
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    environment:
+    environment: &worker-env
       PREFECT_API_URL: http://prefect-server:4200/api
       MINIO_ENDPOINT: minio:9000
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -135,9 +129,28 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       YTDLP_POT_URL: http://pot-provider:4416
       WHISPER_DEVICE: cuda
-      WHISPER_COMPUTE_TYPE: float16 
+      WHISPER_COMPUTE_TYPE: float16
     working_dir: /app
-    command: prefect worker start --pool default-pool
+    command: prefect worker start --pool ingestion-pool
+    volumes:
+      - .:/app
+    mem_limit: 4g
+
+  gold-worker:
+    build:
+      context: .
+      dockerfile: prefect_flows/Dockerfile
+    container_name: political-speeches-gold-worker
+    restart: unless-stopped
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+      prefect-deploy:
+        condition: service_completed_successfully
+    environment:
+      <<: *worker-env
+    working_dir: /app
+    command: prefect worker start --pool gold-pool
     volumes:
       - .:/app
 

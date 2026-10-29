@@ -47,6 +47,12 @@ class YoutubeParams(_Params):
     user_provided: Optional[dict] = None
 
 
+class YoutubeCollectionParams(_Params):
+    playlist_url: str
+    audio_only: bool = False
+    max_videos: Optional[int] = Field(default=None, ge=1)
+
+
 class InternetArchiveParams(_Params):
     urls: List[str] = Field(min_length=1)
     excluded_indices: Dict[str, List[int]] = Field(default_factory=dict)

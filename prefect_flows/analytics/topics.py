@@ -51,8 +51,8 @@ def fit_topics(doc_ids: List[int], texts: List[str]) -> Dict[int, dict]:
     embeddings = embed_documents(texts)
 
     # ngram_range=(1, 2) enables one-word and two-word keywords extraction
-    # min_df=2 drops n-grams that appear in only one document
-    vectorizer_model = CountVectorizer(stop_words="english", ngram_range=(1, 2), min_df=2)
+    # min_df=1 drops n-grams that appear in only one document
+    vectorizer_model = CountVectorizer(stop_words="english", ngram_range=(1, 2), min_df=1)
 
     # Seeding umap (dimentionality reduction technique) for reproducibility
     umap_model = UMAP(random_state=42)

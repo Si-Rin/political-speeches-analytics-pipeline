@@ -15,7 +15,6 @@ PREFECT_DEPLOYMENT_NAME = os.environ.get("PREFECT_DEPLOYMENT_NAME", "default")
 PREFECT_DEPLOYMENT_ID = os.environ.get("PREFECT_DEPLOYMENT_ID")
 PREFECT_API_TIMEOUT = float(os.environ.get("PREFECT_API_TIMEOUT", "10"))
 PREFECT_TOPICS_FLOW_NAME = os.environ.get("PREFECT_TOPICS_FLOW_NAME", "gold-topics")
-PREFECT_TOPICS_DEPLOYMENT_NAME = os.environ.get("PREFECT_TOPICS_DEPLOYMENT_NAME", "default")
 
 
 class PrefectError(RuntimeError):
@@ -78,7 +77,7 @@ def cancel_flow_run(flow_run_id: str) -> None:
 # ---------------------------------------------------------------------------
 def create_topics_flow_run() -> str:
     """Submit the corpus-wide topic modeling flow (no parameters: it refits over the whole corpus)."""
-    deployment_id = _named_deployment_id(PREFECT_TOPICS_FLOW_NAME, PREFECT_TOPICS_DEPLOYMENT_NAME)
+    deployment_id = _named_deployment_id(PREFECT_TOPICS_FLOW_NAME, PREFECT_DEPLOYMENT_NAME)
     response = _request("POST", f"/deployments/{deployment_id}/create_flow_run", json={"parameters": {}}, headers={"Content-Type": "application/json"})
     flow_run_id = response.json().get("id")
     if not flow_run_id:

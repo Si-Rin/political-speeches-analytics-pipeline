@@ -1,7 +1,7 @@
 from typing import Optional
 from prefect_flows.extractors.base import BaseExtractor
 from prefect_flows.extractors.utils import parse_date
-from prefect_flows.extractors.whisper_transcriber import transcribe
+from prefect_flows.extractors.whisper_transcriber import resolve_language, transcribe
 
 
 class AudioVideoExtractor(BaseExtractor):
@@ -13,3 +13,6 @@ class AudioVideoExtractor(BaseExtractor):
 
     def extract_pub_date(self, local_path: str, raw_metadata: dict) -> Optional[str]:
         return parse_date(raw_metadata.get("upload_date") or raw_metadata.get("publication_date"))
+
+    def extract_language(self, local_path: str, raw_metadata: dict, content: str) -> Optional[str]:
+        return resolve_language(raw_metadata)

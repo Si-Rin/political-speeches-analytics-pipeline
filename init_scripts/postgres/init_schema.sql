@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS silver.text (
     title               TEXT,               -- optional
     speaker             VARCHAR(255),       -- optional
     publication_date    DATE,               -- optional
+    language            VARCHAR(20),        -- optional
     transcript          TEXT,
     word_count          INT,
     status_processing   TEXT        NOT NULL DEFAULT 'pending' CHECK (status_processing IN ('pending', 'success', 'failed')),
@@ -90,6 +91,7 @@ CREATE TABLE IF NOT EXISTS silver.text (
 
 CREATE INDEX IF NOT EXISTS idx_silver_status_processing ON silver.text(status_processing);
 CREATE INDEX IF NOT EXISTS idx_silver_publication_date ON silver.text(publication_date);
+CREATE INDEX IF NOT EXISTS idx_silver_language ON silver.text(language);
 
 -- Gold Layer : final analytics-ready data
 CREATE TABLE IF NOT EXISTS gold.analytics (
