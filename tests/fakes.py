@@ -13,8 +13,8 @@ class FakeStore:
 
 class FakeRepo:
     """Runs + Bronze + known-URL ports."""
-    def __init__(self, insert_error=False, race=False):
-        self.docs, self.checksums = [], set()
+    def __init__(self, insert_error=False, race=False, known_urls=()):
+        self.docs, self.checksums, self.known = [], set(), set(known_urls)
         self.runs, self.status_history = {}, []
         self.insert_error, self.race = insert_error, race
     def ensure_run(self, run_id, mode, source_name, params, params_version, dry_run, prefect_flow_run_id=None):
@@ -33,4 +33,4 @@ class FakeRepo:
         self.checksums.add(kw["checksum"]); self.docs.append(kw)
         return len(self.docs)
     def known_url(self, canonical_url, source_type=None):
-        return False
+        return canonical_url in self.known

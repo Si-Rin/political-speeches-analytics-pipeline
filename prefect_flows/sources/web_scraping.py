@@ -23,7 +23,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from prefect_flows.collection.handles import HttpHandle
-from prefect_flows.sources.base import BaseSource, Candidate, KnownUrlGate
+from prefect_flows.sources.base import BaseSource, Candidate
 
 from prefect_flows.http_config import USER_AGENT as DEFAULT_USER_AGENT  # custom user agent to avoid being blocked by websites
 
@@ -39,8 +39,6 @@ class WebCrawlSource(BaseSource):
         crawl_delay: float = 1.0,
         user_agent: str = DEFAULT_USER_AGENT,
         request_timeout: int = 15,
-        known_urls=None,
-        recorder=None,
     ):
         """
         seed_urls: starting point(s) for the crawl
@@ -63,7 +61,6 @@ class WebCrawlSource(BaseSource):
         self.crawl_delay = crawl_delay
         self.user_agent = user_agent
         self.request_timeout = request_timeout
-        self.gate = KnownUrlGate(known_urls, recorder, source_name="web_crawl")    # known pages are skipped and NOT counted toward max_documents
         self._robots_cache: dict[str, RobotFileParser] = {}
 
     def _normalize_domain(self, value: str) -> str:
@@ -165,7 +162,7 @@ class WebCrawlSource(BaseSource):
             haystack = f"{title} {page_text} {url}".lower() # combine title, text, and URL for keyword matching (haystack means the text to search through to find the keywords — the needle)
 
             matched = [kw for kw in self.keywords if kw in haystack]
-            if len(matched) >= self.keyword_threshold and not self.gate.skip(url, title=title, listing_url=parent):
+            if len(matched) >= self.keyword_threshold:
                 yield Candidate(
                     source_url=url,
                     source_type="text",

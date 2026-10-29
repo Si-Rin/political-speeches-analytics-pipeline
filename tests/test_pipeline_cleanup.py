@@ -132,3 +132,38 @@ def test_staging_handle_deletes_object_after_use(tmp_path):
     client = Minio()
     status, *_ = consume(tmp_path, cand(StagingObjectHandle(client, "u-1.mp3")))
     assert status == S.INGESTED and client.removed == [("staging", "u-1.mp3")]
+
+
+class CountingFetcher(StubFetcher):
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+    def download(self, *a, **kw):
+        self.calls += 1
+        return super().download(*a, **kw)
+
+
+def test_known_url_is_skipped_before_any_download(tmp_path):
+    """Miller Center re-run: HTML bytes differ at every download, so only the URL can recognise the page."""
+    fetcher, repo = CountingFetcher(), FakeRepo(known_urls={"https://h/a.mp3"})
+    status, rec, store, _ = consume(tmp_path, cand(HttpHandle("https://h/a.mp3", filename="a.mp3")), repo=repo, fetcher=fetcher)
+    assert status == S.KNOWN_URL_SKIPPED and fetcher.calls == 0 and not store.objects and not repo.docs
+    assert rec.entries[0].status == S.KNOWN_URL_SKIPPED and rec.entries[0].doc_id is None
+
+
+def test_known_url_is_reported_in_dry_runs_too(tmp_path):
+    repo = FakeRepo(known_urls={"https://h/a.mp3"})
+    status, *_ = consume(tmp_path, cand(HttpHandle("https://h/a.mp3", filename="a.mp3")), repo=repo, dry_run=True)
+    assert status == S.KNOWN_URL_SKIPPED
+
+
+def test_unknown_url_is_still_ingested(tmp_path):
+    status, *_ = consume(tmp_path, cand(HttpHandle("https://h/a.mp3", filename="a.mp3")), repo=FakeRepo(known_urls={"https://h/other"}))
+    assert status == S.INGESTED
+
+
+def test_local_files_are_never_url_deduplicated(tmp_path):
+    f = tmp_path / "speech.txt"; f.write_bytes(b"new version")
+    c = Candidate(source_url=str(f), source_type="text", file_name="speech.txt", handle=LocalPathHandle(f))
+    status, *_ = consume(tmp_path, c, repo=FakeRepo(known_urls={str(f)}))
+    assert status == S.INGESTED

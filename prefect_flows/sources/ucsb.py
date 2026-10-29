@@ -18,7 +18,7 @@ from bs4 import BeautifulSoup
 
 from prefect_flows.collection.handles import HttpHandle
 from prefect_flows.collection.urls import safe_file_name
-from prefect_flows.sources.base import BaseSource, Candidate, KnownUrlGate
+from prefect_flows.sources.base import BaseSource, Candidate
 
 from prefect_flows.http_config import USER_AGENT as DEFAULT_USER_AGENT
 
@@ -40,8 +40,6 @@ class UcsbSource(BaseSource):
         max_documents: Optional[int] = 1,
         crawl_delay: float = 1.0,
         request_timeout: int = 20,
-        known_urls=None,
-        recorder=None, 
     ):
         """
         - listing_url: the president's document listing page to paginate through (/donald-j-trump-1st-term or /donald-j-trump-2nd-term)
@@ -57,7 +55,6 @@ class UcsbSource(BaseSource):
         self.max_documents = max_documents
         self.crawl_delay = crawl_delay
         self.request_timeout = request_timeout
-        self.gate = KnownUrlGate(known_urls, recorder, source_name=SOURCE_NAME)    # known pages are skipped and NOT counted toward max_documents
         self.headers = {"User-Agent": DEFAULT_USER_AGENT}
 
     def _fetch(self, url: str) -> Optional[BeautifulSoup]:
@@ -128,8 +125,6 @@ class UcsbSource(BaseSource):
                 if doc_url in yielded_urls:
                     continue
                 yielded_urls.add(doc_url)
-                if self.gate.skip(doc_url, title=link_text, listing_url=current_url):
-                    continue
                 yield self._build_candidate(doc_url, link_text, content_type)
                 count += 1
 

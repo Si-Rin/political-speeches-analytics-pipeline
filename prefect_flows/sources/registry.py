@@ -70,6 +70,13 @@ def _youtube(p, deps):
                          max_downloads=p.max_downloads, work=deps.work, known_urls=deps.known_urls, recorder=deps.recorder)
 
 
+def _youtube_collection(p, deps):
+    from prefect_flows.sources.youtube import YoutubeSource
+    return YoutubeSource(urls=[p.playlist_url], audio_only=p.audio_only, playlist_mode=True,
+                         max_downloads=p.max_videos, work=deps.work,
+                         known_urls=deps.known_urls, recorder=deps.recorder)
+
+
 def _internet_archive(p, deps):
     from prefect_flows.sources.internet_archive import InternetArchiveSource
     return InternetArchiveSource(urls=p.urls, excluded_indices=p.excluded_indices)
@@ -78,19 +85,19 @@ def _internet_archive(p, deps):
 def _miller_center(p, deps):
     from prefect_flows.sources.miller_center import MillerCenterSource
     return MillerCenterSource(urls=p.urls, start_url=p.start_url, max_depth=p.max_depth,
-                              crawl_delay=p.crawl_delay, request_timeout=p.request_timeout, known_urls=deps.known_urls, recorder=deps.recorder)
+                              crawl_delay=p.crawl_delay, request_timeout=p.request_timeout)
 
 
 def _ucsb(p, deps):
     from prefect_flows.sources.ucsb import UcsbSource
     return UcsbSource(listing_url=p.listing_url, link_text_filter=p.link_text_filter,
-                      max_documents=p.max_documents, crawl_delay=p.crawl_delay, known_urls=deps.known_urls, recorder=deps.recorder)
+                      max_documents=p.max_documents, crawl_delay=p.crawl_delay)
 
 
 def _web_crawl(p, deps):
     from prefect_flows.sources.web_scraping import WebCrawlSource
     return WebCrawlSource(seed_urls=p.seed_urls, keywords=p.keywords, allowed_domains=p.allowed_domains,
-                          max_depth=p.max_depth, max_pages=p.max_pages, known_urls=deps.known_urls, recorder=deps.recorder)
+                          max_depth=p.max_depth, max_pages=p.max_pages)
 
 
 for _spec in (
@@ -98,6 +105,7 @@ for _spec in (
     SourceSpec(SourceName.LOCAL_FILE, Mode.SINGLE, models.LocalFileParams, _local_file),
     SourceSpec(SourceName.DIRECT_URL, Mode.SINGLE, models.DirectUrlParams, _direct_url),
     SourceSpec(SourceName.YOUTUBE, Mode.SINGLE, models.YoutubeParams, _youtube),
+    SourceSpec(SourceName.YOUTUBE_COLLECTION, Mode.ARCHIVE, models.YoutubeCollectionParams, _youtube_collection),
     SourceSpec(SourceName.INTERNET_ARCHIVE, Mode.SINGLE, models.InternetArchiveParams, _internet_archive),
     SourceSpec(SourceName.MILLER_CENTER, Mode.ARCHIVE, models.MillerCenterParams, _miller_center),
     SourceSpec(SourceName.UCSB, Mode.ARCHIVE, models.UcsbParams, _ucsb),

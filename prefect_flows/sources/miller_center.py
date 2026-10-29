@@ -19,7 +19,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 from prefect_flows.collection.handles import HttpHandle
 from prefect_flows.collection.urls import safe_file_name
-from prefect_flows.sources.base import BaseSource, Candidate, KnownUrlGate
+from prefect_flows.sources.base import BaseSource, Candidate
 
 from prefect_flows.http_config import USER_AGENT as DEFAULT_USER_AGENT
 
@@ -42,8 +42,6 @@ class MillerCenterSource(BaseSource):
         max_depth: int = 1000,
         crawl_delay: float = 1.0,
         request_timeout: int = 20,
-        known_urls=None,
-        recorder=None,
     ):
         """
         Two mutually exclusive modes:
@@ -57,7 +55,6 @@ class MillerCenterSource(BaseSource):
         self.max_depth = max_depth
         self.crawl_delay = crawl_delay
         self.request_timeout = request_timeout
-        self.gate = KnownUrlGate(known_urls, recorder, source_name="miller_center")   # known speeches are skipped and NOT counted toward max_depth
         self.headers = {"User-Agent": DEFAULT_USER_AGENT}
 
     def _fetch(self, url: str) -> Optional[BeautifulSoup]:
@@ -136,25 +133,21 @@ class MillerCenterSource(BaseSource):
         return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
 
     def _expand_listing(self, listing_url: str, limit: int) -> Iterator[tuple]:
-        """Yield (speech URL, title) of speeches NOT yet in Bronze from a listing page and its following pages. `limit` counts only
-        those new speeches: known ones are skipped and paging continues. Stops at `limit`, when a page shows no speech link at all
-        (end of listing), or after MAX_LISTING_PAGES."""
-        seen_pages, seen_speeches, seen_known, page_url, pages = set(), set(), set(), listing_url, 0
+        """Yield (speech URL, title) from a listing page and its following pages. stops at `limit`, when a page shows no speech link
+        (end of listing), or after MAX_LISTING_PAGES. Speeches already in Bronze are skipped later by the pipeline (known_url_skipped)"""
+        seen_pages, seen_speeches, page_url, pages = set(), set(), listing_url, 0
         while page_url and page_url not in seen_pages and pages < MAX_LISTING_PAGES and len(seen_speeches) < limit:
             seen_pages.add(page_url)
             soup = self._fetch(page_url)
             pages += 1
             if soup is None:
                 return
-            new = [(u, t) for u, t in self._speech_links(soup, page_url) if u not in seen_speeches and u not in seen_known]
+            new = [(u, t) for u, t in self._speech_links(soup, page_url) if u not in seen_speeches]
             if not new:
                 return                                  # no progress: end of the listing (or a layout we do not recognise)
             for u, t in new:
                 if len(seen_speeches) >= limit:
                     return
-                if self.gate.skip(u, title=t, listing_url=page_url):
-                    seen_known.add(u)                   # already collected: skipped, does not use up the limit; keep paging
-                    continue
                 seen_speeches.add(u)
                 yield u, t
             time.sleep(self.crawl_delay)
@@ -178,8 +171,6 @@ class MillerCenterSource(BaseSource):
                 return
         if self.urls:
             for url in self.urls:
-                if self.gate.skip(url):
-                    continue
                 soup = self._fetch(url)
                 if soup is None:
                     continue
@@ -202,9 +193,8 @@ class MillerCenterSource(BaseSource):
             if soup is None:
                 break  # chain broken — can't discover next_url without this page
 
-            if not self.gate.skip(current_url):          # known page: still traversed to reach the next one, but not counted
-                yield self._build_candidate(current_url, soup)
-                count += 1
+            yield self._build_candidate(current_url, soup)
+            count += 1
 
             next_url = self._extract_next_url(soup, current_url)
             time.sleep(self.crawl_delay)
