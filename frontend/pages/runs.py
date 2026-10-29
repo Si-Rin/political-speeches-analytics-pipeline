@@ -46,6 +46,12 @@ REASONS = {  # ReasonCode -> meaning
     "format_unavailable": "Requested format not available (e.g. YouTube)",
 }
 
+ACTIVE = ("queued", "running")
+RETRYABLE = ("failed", "cancelled", "completed_with_errors")
+PER_DOC_GOLD_MODULES = 6          # lexical, syntactic, entities, sentiment, emotions, labels (topics/keywords are corpus-level)
+SELECT_KEY, OPEN_DOC_KEY = "runs_selected", "documents_selected_doc"
+REFRESH_SECONDS = 5
+
 
 def render_outcomes(counts: dict, reasons: dict):
     """What happened to every candidate discovered by the run"""
@@ -54,6 +60,8 @@ def render_outcomes(counts: dict, reasons: dict):
         return
     total = sum(counts.values())
     st.subheader("Outcomes")
+    if set(counts) == {"known_url_skipped"}:
+        st.info(f"Nothing new to collect: all {total} items found were already in the database, so no download was needed.")
     df = pd.DataFrame([{"Outcome": OUTCOMES.get(k, (k, "#9e9e9e", ""))[0], "Candidates": v,
                         "Share": v / total, "Description": OUTCOMES.get(k, (k, "", ""))[2]} for k, v in counts.items()]
                       ).sort_values("Candidates", ascending=False)
@@ -76,20 +84,9 @@ def render_outcomes(counts: dict, reasons: dict):
         st.dataframe(df[["Outcome", "Candidates", "Description"]], hide_index=True, width="stretch")
     if reasons:
         with st.expander(f"Why candidates were not collected ({sum(reasons.values())})", expanded=True):
-            rdf = pd.DataFrame([{"reason": REASONS.get(k, k), "code": k, "candidates": v} for k, v in reasons.items()]
+            rdf = pd.DataFrame([{"Reason": REASONS.get(k, k), "Code": k, "Candidates": v} for k, v in reasons.items()]
                                ).sort_values("Candidates", ascending=False)
             st.dataframe(rdf, hide_index=True, width="stretch")
-
-
-ACTIVE = ("queued", "running")
-RETRYABLE = ("failed", "cancelled", "completed_with_errors")
-PER_DOC_GOLD_MODULES = 6          # lexical, syntactic, entities, sentiment, emotions, labels
-SELECT_KEY, OPEN_DOC_KEY = "runs_selected", "status_selected_doc"
-REFRESH_SECONDS = 5
-
-# a "Relaunch" asked to select the new run: must be applied BEFORE the selectbox below is created
-if "_pending_run_select" in st.session_state:
-    st.session_state[SELECT_KEY] = st.session_state.pop("_pending_run_select")
 
 
 def _ts(value):
@@ -104,6 +101,7 @@ def duration_seconds(detail: dict):
 
 
 def fmt_duration(seconds):
+    """Format a duration to human readable form"""
     if seconds is None:
         return "—"
     seconds = int(seconds)
@@ -223,9 +221,10 @@ def run_panel():
                            format_func=lambda i: next(f"#{i} — {r['title']}" for r in chain if r["doc_id"] == i))
         c2.write("")
         c2.write("")
-        if c2.button("Open in Pipeline Status", key="open_doc"):
+        if c2.button("Open in Documents", key="open_doc"):
             st.session_state[OPEN_DOC_KEY] = doc
-            st.switch_page("pages/pipeline_status.py")
+            st.session_state["documents_view"] = "Document"  # opens a preview  of the document
+            st.switch_page("pages/documents.py")
 
     # ---- discovery log ----
     st.subheader("Discovery log")
@@ -239,7 +238,7 @@ def run_panel():
         df = pd.DataFrame(log["items"])
         st.dataframe(df[[c for c in cols if c in df.columns]], width="stretch", hide_index=True,
                      column_config={"doc_id": st.column_config.NumberColumn("Document ID", format="%d")})
-        st.caption(f"{log['total']} entries. Use “Open in Pipeline Status” above to see a created document's results.")
+        st.caption(f"{log['total']} entries. Use “Open in Documents” above to see a created document's results.")
     else:
         st.caption("No log entries.")
 

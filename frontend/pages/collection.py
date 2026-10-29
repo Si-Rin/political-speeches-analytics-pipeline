@@ -30,4 +30,4 @@ if mode == "Single document":
 else:
     source = st.radio("Source", list(archive_forms.RENDERERS), horizontal=True, key="collection_archive_source")
     archive_forms.RENDERERS[source]()
-    st.caption("YouTube collections and Internet Archive collections are not available yet.")
+    st.caption("Internet Archive collections are not available yet.")

@@ -202,3 +202,35 @@ def get_topics_run_status() -> Optional[Dict]:
 
 def start_topics_run() -> Optional[Dict]:
     return _post("/analytics/topics/run")
+
+
+# ---------------------------------------------------------------------------
+# Documents page
+# ---------------------------------------------------------------------------
+def get_library() -> List[Dict]:
+    result = _get("/documents/library")
+    return result["documents"] if result else []
+
+
+def get_document_detail(doc_id: int) -> Optional[Dict]:
+    return _get(f"/documents/{doc_id}/detail")
+
+
+def get_text_preview(doc_id: int, offset: int = 0, limit: int = 5000) -> Optional[Dict]:
+    return _get(f"/documents/{doc_id}/text", offset=offset, limit=limit)
+
+
+def update_document_metadata(doc_id: int, **fields) -> bool:
+    try:
+        resp = requests.patch(_url(f"/documents/{doc_id}/metadata"), json=fields, timeout=30)
+        resp.raise_for_status()
+        return True
+    except requests.HTTPError as e:
+        st.error(f"Update failed: {_error_detail(e.response)}")
+    except requests.RequestException as e:
+        st.error(f"Could not reach the backend at {API_BASE_URL}: {e}")
+    return False
+
+
+def delete_documents(doc_ids: List[int]) -> Optional[Dict]:
+    return _post("/documents/delete", {"doc_ids": list(doc_ids)})

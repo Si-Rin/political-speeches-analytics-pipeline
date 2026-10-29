@@ -4,6 +4,8 @@ one model, and a validation error names the model that failed. Site constants (T
 IA exclusions) never appear here: they live in the Prefect-side adapters.
 """
 from datetime import date
+import re
+from urllib.parse import urlsplit
 from typing import Annotated, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -58,6 +60,28 @@ class YoutubeRequest(_SingleRequest):
     _check_url = field_validator("url")(_http_url)
 
 
+def _youtube_playlist_url(value: str) -> str:
+    """A playlist (…/playlist?list=…, watch?v=…&list=…) or a channel page (…/@name/videos, /channel/…)."""
+    value = _http_url(value)
+    parts = urlsplit(value)
+    host = (parts.hostname or "").lower().removeprefix("www.").removeprefix("m.")
+    if host not in ("youtube.com", "music.youtube.com"):
+        raise ValueError("must be a youtube.com playlist URL")
+    is_playlist = "list=" in parts.query or parts.path.startswith("/playlist")
+    is_channel = parts.path.startswith(("/@", "/channel/", "/c/", "/user/"))
+    if not (is_playlist or is_channel):
+        raise ValueError("must be a playlist URL (youtube.com/playlist?list=…) or a channel page")
+    return value
+
+
+class YoutubeCollectionRequest(_Request):
+    source: Literal["youtube_collection"]
+    playlist_url: str
+    download_format: DownloadFormat = DownloadFormat.AUDIO
+    max_videos: int = Field(default=10, ge=1, le=200, description="Videos taken from the start of the playlist")
+    _check_url = field_validator("playlist_url")(_youtube_playlist_url)
+
+
 class InternetArchiveRequest(_SingleRequest):
     source: Literal["internet_archive"]
     url: str = Field(description="An item URL (archive.org/details/<identifier>)")
@@ -109,12 +133,32 @@ class MillerCenterRequest(_Request):
         return self
 
 
+def ucsb_link_text_filter(url: str) -> str:
+    """The link-text filter is derived from the listing URL (never typed by the user):
+    "first-term" in the URL -> "tweets of"; "second-term" -> "truth social posts of"."""
+    normalized = re.sub(r"[\s_+]|%20", "-", url.lower())
+    first, second = "first-term" in normalized, "second-term" in normalized
+    if first == second:
+        raise ValueError("The listing URL must contain either 'first-term' (tweets) or 'second-term' (Truth Social posts)"
+                         + (", not both" if first else ""))
+    return "tweets of" if first else "truth social posts of"
+
+
 class UcsbRequest(_Request):
     source: Literal["ucsb"]
     listing_url: str
-    link_text_filter: str = Field(default="tweets of", min_length=1, max_length=200)
     max_documents: int = Field(default=1, ge=1, le=500)
     _check_url = field_validator("listing_url")(_http_url)
+
+    @field_validator("listing_url")
+    @classmethod
+    def _term_in_url(cls, v):
+        ucsb_link_text_filter(v)             # raises a clear validation error when the term cannot be detected
+        return v
+
+    @property
+    def link_text_filter(self) -> str:
+        return ucsb_link_text_filter(self.listing_url)
 
 
 RunRequest = Annotated[ 

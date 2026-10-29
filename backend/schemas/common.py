@@ -17,6 +17,7 @@ class SourceName(str, Enum):
     LOCAL_FILE = "local_file"
     DIRECT_URL = "direct_url"
     YOUTUBE = "youtube"
+    YOUTUBE_COLLECTION = "youtube_collection"
     INTERNET_ARCHIVE = "internet_archive"
     MILLER_CENTER = "miller_center"
     UCSB = "ucsb"

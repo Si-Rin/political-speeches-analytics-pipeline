@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from backend.schemas.common import DownloadFormat, Mode, SourceName
 from backend.schemas.sources import (
     SOURCE_MODE, DirectUrlRequest, InternetArchiveRequest, LocalFileRequest, 
-     MillerCenterRequest, UcsbRequest, WebCrawlRequest, YoutubeRequest,
+     MillerCenterRequest, UcsbRequest, WebCrawlRequest, YoutubeRequest, YoutubeCollectionRequest
 )
 
 
@@ -41,6 +41,10 @@ def to_prefect_params(req) -> PrefectPayload:
     elif isinstance(req, YoutubeRequest):
         name = SourceName.YOUTUBE
         params = {"urls": [req.url], "audio_only": req.download_format == DownloadFormat.AUDIO}
+    elif isinstance(req, YoutubeCollectionRequest):
+        name = SourceName.YOUTUBE_COLLECTION
+        params = {"playlist_url": req.playlist_url, "audio_only": req.download_format == DownloadFormat.AUDIO, "max_videos": req.max_videos}
+        return PrefectPayload(name, SOURCE_MODE[name], params)
     elif isinstance(req, InternetArchiveRequest):
         name = SourceName.INTERNET_ARCHIVE
         params = {"urls": [req.url]}

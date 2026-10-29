@@ -12,10 +12,35 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from backend import storage
 from backend.db import get_connection
+from backend.routes.status import GOLD_MODULES
 from backend.schemas import (
     ProbeRequest, ProbeResponse, DocumentSummary, DocumentHistoryResponse,
+    DocumentRecord, DocumentLibraryResponse, DocumentDetail, TextPreview, MetadataUpdate, DeleteRequest, DeleteResponse,
 )
 from backend.pipeline_probe import probe
+
+
+
+_GOLD_DONE_SQL = " + ".join(f"(g.{col} IS NOT NULL)::int" for col in GOLD_MODULES.values())
+_RECORD_COLUMNS = f"""
+    b.doc_id, b.source_url, b.file_name, b.source_type, b.file_size, b.mime_type, b.ingestion_date, b.raw_metadata->>'source_name',
+    s.title, s.speaker, s.publication_date, s.language, s.word_count, s.status_processing, s.error_message,
+    COALESCE({_GOLD_DONE_SQL}, 0)
+"""
+_RECORD_FROM = """
+    FROM bronze.documents b
+    LEFT JOIN silver.text s ON s.doc_id = b.doc_id
+    LEFT JOIN gold.analytics g ON g.doc_id = b.doc_id
+"""
+
+def _record_kwargs(r) -> dict:
+    (doc_id, source_url, file_name, source_type, file_size, mime_type, ingestion_date, origin,
+     title, speaker, publication_date, language, word_count, status, error, gold_done) = r[:16]
+    return dict(doc_id=doc_id, source=source_url or file_name or "", source_type=source_type, file_name=file_name,
+                file_size=file_size, mime_type=mime_type, ingestion_date=ingestion_date, origin=origin, title=title,
+                speaker=speaker, publication_date=publication_date, language=language, word_count=word_count,
+                silver_status=status or "not_started", silver_error=error, gold_done=int(gold_done or 0), gold_total=len(GOLD_MODULES))
+
 
 router = APIRouter()
 
@@ -72,6 +97,42 @@ def get_history(source_type: Optional[str] = None):
     return DocumentHistoryResponse(documents=documents)
 
 
+
+@router.get("/documents/library", response_model=DocumentLibraryResponse)
+def get_library():
+    """Every document with its metadata and processing state (Documents page: library and corpus statistics)."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT {_RECORD_COLUMNS} {_RECORD_FROM} WHERE b.excluded = FALSE ORDER BY b.ingestion_date DESC")
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return DocumentLibraryResponse(documents=[DocumentRecord(**_record_kwargs(r)) for r in rows])
+
+
+@router.post("/documents/delete", response_model=DeleteResponse)
+def delete_documents(req: DeleteRequest):
+    """Delete documents everywhere: Bronze row (Silver and Gold cascade) and the raw file in object storage.
+    The URL becomes unknown again, so it can be collected anew."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM bronze.documents WHERE doc_id = ANY(%s) RETURNING doc_id, storage_path", (list(set(req.doc_ids)),))
+            deleted = cur.fetchall()
+        conn.commit()
+    finally:
+        conn.close()
+    storage_errors = 0
+    for _doc_id, storage_path in deleted:
+        try:
+            if not storage.delete_bronze(storage_path):
+                storage_errors += 1
+        except storage.StorageUnavailable:
+            storage_errors += 1
+    return DeleteResponse(deleted=len(deleted), storage_errors=storage_errors)
+
+
 @router.get("/documents/{doc_id}", response_model=DocumentSummary)
 def get_document(doc_id: int):
     conn = get_connection()
@@ -106,6 +167,7 @@ def get_document(doc_id: int):
         ingestion_date=ingestion_date,
         silver_status=status_processing or "not_started",
     )
+
 
 @router.get("/documents/{doc_id}/download")
 def download_document(doc_id: int):
@@ -154,3 +216,63 @@ def download_transcript(doc_id: int):
     if row is None or row[1] != "success" or not row[0]:
         raise HTTPException(status_code=404, detail="No transcript yet: Silver processing has not succeeded for this document.")
     return PlainTextResponse(row[0], headers={"Content-Disposition": f'attachment; filename="document_{doc_id}.txt"'})
+
+
+@router.get("/documents/{doc_id}/detail", response_model=DocumentDetail)
+def get_document_detail(doc_id: int):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""SELECT {_RECORD_COLUMNS}, b.checksum, b.storage_path, b.first_run_id::text, length(s.transcript),
+                           s.processing_date, b.raw_metadata
+                    {_RECORD_FROM} WHERE b.doc_id = %s AND b.excluded = FALSE""", (doc_id,))
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+    checksum, storage_path, first_run_id, char_count, processing_date, raw_metadata = row[16:22]
+    return DocumentDetail(**_record_kwargs(row), checksum=checksum, storage_path=storage_path, first_run_id=first_run_id,
+                          char_count=char_count, processing_date=processing_date, raw_metadata=raw_metadata)
+
+
+@router.get("/documents/{doc_id}/text", response_model=TextPreview)
+def get_text_preview(doc_id: int, offset: int = 0, limit: int = 5000):
+    """A slice of the Silver text (transcript) for on-screen preview; the full text is /transcript."""
+    offset, limit = max(offset, 0), min(max(limit, 1), 50000)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT substr(s.transcript, %s, %s), length(s.transcript)
+                           FROM silver.text s JOIN bronze.documents b ON b.doc_id = s.doc_id
+                           WHERE s.doc_id = %s AND b.excluded = FALSE AND s.transcript IS NOT NULL""", (offset + 1, limit, doc_id))
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail="No text yet: Silver processing has not produced a text for this document.")
+    text, total = row
+    return TextPreview(text=text or "", offset=offset, total_chars=total or 0, has_more=offset + limit < (total or 0))
+
+
+@router.patch("/documents/{doc_id}/metadata")
+def update_metadata(doc_id: int, body: MetadataUpdate):
+    """Edit title / speaker / publication date / language (Silver columns). Only the fields sent are changed."""
+    fields = {k: getattr(body, k) for k in body.model_fields_set}
+    if not fields:
+        raise HTTPException(status_code=422, detail="Nothing to update.")
+    assignments = ", ".join(f"{col} = %s" for col in fields)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"UPDATE silver.text s SET {assignments} FROM bronze.documents b "
+                        "WHERE s.doc_id = %s AND b.doc_id = s.doc_id AND b.excluded = FALSE RETURNING s.doc_id",
+                        (*fields.values(), doc_id))
+            updated = cur.fetchone()
+        conn.commit()
+    finally:
+        conn.close()
+    if updated is None:
+        raise HTTPException(status_code=409, detail="Metadata can be edited once Silver has processed the document.")
+    return {"ok": True, "updated": sorted(fields)}
