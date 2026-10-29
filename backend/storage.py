@@ -70,3 +70,14 @@ def open_bronze(storage_path: str, client: Optional[Minio] = None):
         raise StorageUnavailable(f"Could not read from object storage: {exc}") from exc
     except OSError as exc:
         raise StorageUnavailable(f"Could not reach object storage: {exc}") from exc
+
+
+def delete_bronze(storage_path: str, client: Optional[Minio] = None) -> bool:
+    """Remove a Bronze object. A missing object counts as success (the goal is that it is gone)."""
+    try:
+        (client or get_client()).remove_object(BRONZE_BUCKET, storage_path)
+        return True
+    except S3Error as exc:
+        return exc.code in ("NoSuchKey", "NoSuchBucket")
+    except OSError:
+        return False
