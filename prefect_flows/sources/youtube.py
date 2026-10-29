@@ -128,6 +128,7 @@ class YoutubeSource(BaseSource):
 
         for url in urls:
             entry_urls = [url]  # the url is considered a single entry by default
+            titles = {}         # canonical video URL -> title known from the playlist listing (for discovery log)
             
             if self.playlist_mode:  # if the url refers to a playlist, we need to extract the individual video URLs
                 listing_opts = {
@@ -142,6 +143,7 @@ class YoutubeSource(BaseSource):
                         if self.max_downloads:
                             entries = entries[:self.max_downloads]
                         entry_urls = [entry.get("url") for entry in entries if entry.get("url")]
+                        titles = {canonical_youtube_url(e["url"]): e.get("title") for e in entries if e.get("url") and e.get("title")}
                         print(f"[YoutubeSource] Extracted {len(entry_urls)} video URLs from playlist")
                         
                         for entry_url in entry_urls:
@@ -164,7 +166,7 @@ class YoutubeSource(BaseSource):
                         if self.recorder is not None:
                             self.recorder.record(DiscoveryEntry(
                                 source_name="youtube", source_url=entry_url, canonical_url=entry_url, status=CandidateStatus.KNOWN_URL_SKIPPED,
-                                detail="This video is already in Bronze (any format); skipped before download."))
+                                title_hint=titles.get(entry_url), detail="This video is already in Bronze (any format); skipped before download."))
                         continue
                     opts = {**base_opts, "outtmpl": str(scope.path / "%(id)s.%(ext)s")}
                     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -177,6 +179,7 @@ class YoutubeSource(BaseSource):
                     candidate = Candidate(
                         source_url=entry_url,
                         canonical_url=entry_url,
+                        title_hint=info.get("title") or titles.get(entry_url),
                         source_type="audio" if self.audio_only else "video",
                         file_name=downloaded_path.name,
                         handle=TempFileHandle(downloaded_path, scope),

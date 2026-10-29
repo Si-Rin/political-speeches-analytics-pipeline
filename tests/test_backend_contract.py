@@ -18,6 +18,8 @@ SAMPLES = [
     sources.YoutubeRequest(source="youtube", url="https://youtu.be/x", download_format="video"),
     sources.InternetArchiveRequest(source="internet_archive", url="https://archive.org/details/x", notes="n"),
     sources.WebCrawlRequest(source="web_crawl", seed_urls=["https://x.org"], keywords=["tariff"], max_depth=3, max_pages=10),
+    sources.MillerCenterRequest(source="miller_center", start_url="https://millercenter.org/the-presidency/presidential-speeches"),
+    sources.UcsbRequest(source="ucsb", listing_url="https://www.presidency.ucsb.edu/advanced-search", max_documents=5),
 ]
 
 
