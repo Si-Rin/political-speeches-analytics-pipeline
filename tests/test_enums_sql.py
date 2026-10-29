@@ -6,7 +6,7 @@ import pytest
 
 from prefect_flows.collection.enums import CandidateStatus, MatchScope, Mode, ReasonCode, RunStatus
 
-SQL = (Path(__file__).resolve().parent.parent / "init_scripts/postgres/updates.sql").read_text()
+SQL = (Path(__file__).resolve().parent.parent / "init_scripts/postgres/init_schema.sql").read_text()
 
 
 def check_values(column: str, table_marker: str) -> set:

@@ -132,6 +132,7 @@ def test_internet_archive_has_no_content_type_field_and_submits(api):
 def test_web_crawl_requires_seed_and_keywords(api):
     at = AppTest.from_file(PAGE).run()
     at.radio(key="collection_mode").set_value("Archive collection").run()
+    at.radio(key="collection_archive_source").set_value("Web crawl (Advanced)").run()
     submit(at, "archive_web_crawl", "Start crawl").click().run()
     assert any("seed URL" in w.value for w in at.warning)
     assert api["create_run"] == []
@@ -140,6 +141,7 @@ def test_web_crawl_requires_seed_and_keywords(api):
 def test_web_crawl_full_submit(api):
     at = AppTest.from_file(PAGE).run()
     at.radio(key="collection_mode").set_value("Archive collection").run()
+    at.radio(key="collection_archive_source").set_value("Web crawl (Advanced)").run()
     at.text_area(key="crawl_seed_urls").input("https://example.com/speeches").run()
     at.text_area(key="crawl_keywords").input("tariff\nrally").run()
     at.text_input(key="crawl_domains").input("example.com").run()
