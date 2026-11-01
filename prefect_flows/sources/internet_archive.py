@@ -18,6 +18,7 @@ from bs4 import BeautifulSoup
 
 from prefect_flows.extractors.utils import parse_date
 from prefect_flows.sources.base import BaseSource, Candidate
+from prefect_flows.collection.handles import HttpHandle
 
 DEFAULT_USER_AGENT = "PoliticalSpeechesBot/1.0 (+research project; contact: you@example.com)"
 
@@ -85,13 +86,28 @@ class InternetArchiveSource(BaseSource):
         h1 = soup.find("h1", class_="item-title")
         return h1.get_text(separator=" ", strip=True) if h1 else None
 
-    def _extract_date(self, soup: str) -> Optional[str]:
-        date_container = soup.find("div", class_="tv-ttl").find("div")
-        match = re.search(r"([A-Za-z]+ \d{1,2}, \d{4})", date_container.text)
-        extracted_date = match.group(1) if match else None
-        return parse_date(extracted_date)
+    def _extract_date(self, soup: BeautifulSoup) -> Optional[str]:
+        title_container = soup.find("div", class_="tv-ttl")
 
-    def discover(self) -> Iterator[Candidate]:
+        if not title_container:
+            return None
+
+        date_container = title_container.find("div")
+
+        if not date_container:
+            return None
+
+        match = re.search(
+            r"([A-Za-z]+ \d{1,2}, \d{4})",
+            date_container.get_text(" ", strip=True)
+        )
+
+        if not match:
+            return None
+
+        return parse_date(match.group(1))
+
+    def candidates(self) -> Iterator[Candidate]:
         for url in self.urls:
             soup = self._fetch(url)
             if soup is None:
@@ -103,12 +119,22 @@ class InternetArchiveSource(BaseSource):
                 continue
             identifier = tv3["TV3.identifier"]
 
+            audio_url = urljoin(
+                url,
+                f"/download/{identifier}/{identifier}.mp3"
+            )
+
             yield Candidate(
-                source_url=urljoin(url, f"/download/{identifier}/{identifier}.mp3"),
+                source_url=audio_url,
                 source_type="audio",
                 file_name=f"{identifier}.mp3",
-                is_local=False,
+                handle=HttpHandle(
+                    audio_url,
+                    filename=f"{identifier}.mp3"
+                ),
                 mime_type="audio/mpeg",
+                listing_url=url,
+                title_hint=self._extract_title(soup),
                 raw_metadata={
                     "source_name": "internet_archive",
                     "title": self._extract_title(soup),
@@ -119,7 +145,9 @@ class InternetArchiveSource(BaseSource):
                         "identifier": identifier,
                         "page_url": url,
                         "segments": self._parse_segments(soup),
-                        "excluded_indices": self.excluded_indices.get(identifier, []),
+                        "excluded_indices": self.excluded_indices.get(
+                            identifier, []
+                        ),
                     },
                 },
             )
