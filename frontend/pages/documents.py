@@ -98,27 +98,24 @@ if top[1].button("Refresh", key="documents_refresh"):
 # LIBRARY
 # ===========================================================================
 def render_library():
-    f = st.columns([3, 2, 2, 2])
-    query = f[0].text_input("Search", placeholder="title, speaker, file or source…", key="lib_search")
+    f = st.columns([3, 2, 2])
+    query = f[0].text_input("Search", placeholder="title, file or source…", key="lib_search")
     types = f[1].multiselect("Content type", sorted(df["source_type"].unique()), key="lib_types")
     statuses = f[2].multiselect("Silver status", sorted(df["silver_status"].unique()), key="lib_status")
-    langs = f[3].multiselect("Language", sorted(df["language"].dropna().unique()), key="lib_langs")
-
+ 
     view_df = df
     if query:
         q = query.lower()
-        hay = view_df[["title", "speaker", "file_name", "source"]].fillna("").astype(str).agg(" ".join, axis=1).str.lower()
+        hay = view_df[["title", "file_name", "source"]].fillna("").astype(str).agg(" ".join, axis=1).str.lower()
         view_df = view_df[hay.str.contains(q, regex=False)]
     if types:
         view_df = view_df[view_df["source_type"].isin(types)]
     if statuses:
         view_df = view_df[view_df["silver_status"].isin(statuses)]
-    if langs:
-        view_df = view_df[view_df["language"].isin(langs)]
-
+ 
     table = pd.DataFrame({
-        "ID": view_df["doc_id"], "Title": view_df["title"], "Speaker": view_df["speaker"],
-        "Publication date": view_df["publication_date"].dt.date, "Type": view_df["source_type"], "Language": view_df["language"],
+        "ID": view_df["doc_id"], "Title": view_df["title"],
+        "Publication date": view_df["publication_date"].dt.date, "Type": view_df["source_type"],
         "Words": view_df["word_count"], "Size": view_df["file_size"].map(fmt_size), "Origin": view_df["origin"],
         "Ingested": view_df["ingestion_date"].dt.strftime("%Y-%m-%d %H:%M"),
         "Silver": view_df["silver_status"].map(lambda s: f"{ICON.get(s, '⚪')} {s}"),
@@ -129,7 +126,7 @@ def render_library():
     bar = st.columns([3, 1])
     bar[0].caption(f"{len(view_df)} of {len(df)} document(s)")
     bar[1].download_button("Download table (CSV)", table.to_csv(index=False).encode("utf-8"), file_name="documents.csv", mime="text/csv", key="lib_csv")
-
+ 
     if len(view_df):
         st.markdown("**Open a document**")
         c1, c2 = st.columns([4, 1])
@@ -137,7 +134,7 @@ def render_library():
                             format_func=lambda i: df.loc[df["doc_id"] == i, "label"].iloc[0], label_visibility="collapsed")
         if c2.button("Open", key="lib_open"):
             go("Document", pick)
-
+ 
     with st.expander("Delete documents"):
         st.caption("Deleting removes the document, its text, its analysis results and the stored raw file. "
                    "Its URL becomes unknown again, so it can be collected anew. Topics are computed on the whole corpus: recompute them afterwards.")
@@ -151,7 +148,7 @@ def render_library():
                 st.session_state["_documents_flash"] = f"Deleted {result['deleted']} document(s){extra}."
                 st.session_state.pop(SELECT_KEY, None)
                 go("Library")
-
+ 
 
 # ===========================================================================
 # STATISTICS (all documents)
@@ -164,16 +161,15 @@ def render_statistics():
     k[2].metric("Total words", f"{int(words.sum()):,}")
     k[3].metric("Average words / document", f"{words.mean():,.0f}" if len(words) else "—")
     k[4].metric("Median words", f"{words.median():,.0f}" if len(words) else "—")
-    k = st.columns(5)
-    k[0].metric("Languages", df["language"].nunique())
-    k[1].metric("Origins", df["origin"].nunique())
+    k = st.columns(4)
+    k[0].metric("Origins", df["origin"].nunique())
     done = int((df["silver_status"] == "success").sum())
-    k[2].metric("Silver processed", f"{done} ({done / len(df):.0%})")
+    k[1].metric("Silver processed", f"{done} ({done / len(df):.0%})")
     full = int((df["gold_done"] >= df["gold_total"]).sum())
-    k[3].metric("Fully analysed", f"{full} ({full / len(df):.0%})")
+    k[2].metric("Fully analysed", f"{full} ({full / len(df):.0%})")
     dates = df["publication_date"].dropna()
-    k[4].metric("Publication range", f"{dates.min():%Y-%m-%d} → {dates.max():%Y-%m-%d}" if len(dates) else "—")
-
+    k[3].metric("Publication range", f"{dates.min():%Y-%m-%d} → {dates.max():%Y-%m-%d}" if len(dates) else "—")
+ 
     st.subheader("Pipeline progress")
     silver_counts = df["silver_status"].value_counts()
     gold_state = df.apply(lambda r: "success" if r["gold_done"] >= r["gold_total"] else ("not_started" if r["gold_done"] == 0 else "partial"), axis=1)
@@ -185,19 +181,16 @@ def render_statistics():
         y=alt.Y("layer:N", sort=["Bronze", "Silver", "Gold"], title=None), x=alt.X("documents:Q", stack="zero", title="Documents"),
         color=alt.Color("status:N", scale=colors, legend=alt.Legend(orient="bottom", title=None)), tooltip=["layer", "status", "documents"],
     ).properties(height=150), width="stretch")
-
+ 
     st.subheader("Composition")
-    a, b, c = st.columns(3)
+    a, b = st.columns(2)
     with a:
         st.markdown("**By content type**")
         donut(df["source_type"].value_counts().rename_axis("type").reset_index(name="count"), "type", "count")
     with b:
-        st.markdown("**By language**")
-        hbar(df["language"].fillna("unknown").value_counts().rename_axis("language").reset_index(name="count"), "language", "count", fmt=",d")
-    with c:
         st.markdown("**By origin**")
         hbar(df["origin"].fillna("unknown").value_counts().rename_axis("origin").reset_index(name="count"), "origin", "count", fmt=",d")
-
+ 
     st.subheader("Length and timeline")
     a, b = st.columns(2)
     with a:
@@ -217,14 +210,13 @@ def render_statistics():
         per_year = dates.dt.year.value_counts().sort_index().rename_axis("year").reset_index(name="documents")
         st.altair_chart(alt.Chart(per_year).mark_bar().encode(x=alt.X("year:O", title=None), y=alt.Y("documents:Q", title=None),
                                                               tooltip=["year", "documents"]).properties(height=200), width="stretch")
-
+ 
     st.subheader("Metadata completeness")
     st.caption("Share of documents that have each field filled. Missing values can be completed from the Document view (Edit).")
     comp = pd.DataFrame([{"field": name, "filled": df[col].notna().mean() if col != "title" else (df[col].fillna("").str.strip() != "").mean()}
-                         for name, col in (("Title", "title"), ("Speaker", "speaker"), ("Publication date", "publication_date"),
-                                           ("Language", "language"), ("Word count", "word_count"))])
+                         for name, col in (("Title", "title"), ("Publication date", "publication_date"), ("Word count", "word_count"))])
     hbar(comp, "field", "filled", fmt=".0%", color="#59a14f")
-
+ 
     st.subheader("Longest documents")
     top_docs = df.sort_values("word_count", ascending=False).head(10)
     st.dataframe(pd.DataFrame({"ID": top_docs["doc_id"], "Title": top_docs["title"].fillna(top_docs["source"]), "Words": top_docs["word_count"],
@@ -238,8 +230,8 @@ def prepared(key: str, doc_id: int):
     """Download buttons need bytes: fetch on demand (a raw file can be hundreds of MB), keep them for this document."""
     cached = st.session_state.get(key)
     return cached[1] if cached and cached[0] == doc_id else None
-
-
+ 
+ 
 def render_document():
     doc_id = st.selectbox("Document", doc_ids, key=SELECT_KEY, format_func=lambda i: df.loc[df["doc_id"] == i, "label"].iloc[0],
                           label_visibility="collapsed")
@@ -250,7 +242,7 @@ def render_document():
     raw_meta = detail.get("raw_metadata") or {}
     silver_ok = detail["silver_status"] == "success"
     media = detail["source_type"] in ("audio", "video")
-
+ 
     st.header(detail.get("title") or detail["file_name"] or f"Document #{doc_id}")
     st.caption(f"{detail['source_type'].capitalize()} · #{doc_id} · {ICON.get(detail['silver_status'], '⚪')} Silver {detail['silver_status']} · "
                f"Gold {detail['gold_done']}/{detail['gold_total']} · ingested {fmt_dt(detail['ingestion_date'])}")
@@ -258,7 +250,7 @@ def render_document():
         st.markdown(f"[Open the original source ↗]({detail['source']})")
     if detail.get("silver_error"):
         st.error(f"Silver error: {detail['silver_error']}")
-
+ 
     # ---- actions ----
     a = st.columns(3)
     if a[0].button("Prepare raw file", key=f"prep_raw_{doc_id}"):
@@ -282,9 +274,9 @@ def render_document():
         results = {m["module"]: m["result"] for m in status["gold_modules"] if m["done"]}
         a[2].download_button("Download analysis (JSON)", json.dumps(results, indent=2, default=str).encode("utf-8"),
                              file_name=f"document_{doc_id}_analysis.json", mime="application/json", key=f"dl_an_{doc_id}")
-
+ 
     tabs = st.tabs(["Overview", "Text", "Media" if media else "Raw file", "Analysis", "Edit & delete"])
-
+ 
     # ---- Overview: metadata + statistics ----
     with tabs[0]:
         words, chars = detail.get("word_count"), detail.get("char_count")
@@ -311,11 +303,11 @@ def render_document():
             m[4].metric("Longer than", f"{shorter:.0%} of documents", help=f"Corpus average: {corpus_words.mean():,.0f} words")
         else:
             m[4].metric("Longer than", "—")
-
+ 
         st.subheader("Metadata")
         fields = [
-            ("Title", detail.get("title")), ("Speaker", detail.get("speaker")), ("Publication date", detail.get("publication_date")),
-            ("Language", detail.get("language")), ("Content type", detail["source_type"]), ("Origin", detail.get("origin")),
+            ("Title", detail.get("title")), ("Publication date", detail.get("publication_date")),
+            ("Content type", detail["source_type"]), ("Origin", detail.get("origin")),
             ("File name", detail.get("file_name")), ("MIME type", detail.get("mime_type")), ("File size", fmt_size(detail.get("file_size"))),
             ("Source", detail["source"]), ("Ingested", fmt_dt(detail["ingestion_date"])), ("Processed (Silver)", fmt_dt(detail.get("processing_date"))),
             ("Collection run", detail.get("first_run_id")), ("Checksum (SHA-256)", detail["checksum"]), ("Storage path", detail["storage_path"]),
@@ -326,7 +318,7 @@ def render_document():
             with st.expander(f"Source metadata ({len(extra)} fields)"):
                 st.dataframe(pd.DataFrame([{"Field": k_, "Value": (", ".join(map(str, v)) if isinstance(v, list) else str(v))[:400]}
                                            for k_, v in extra.items()]), hide_index=True, width="stretch")
-
+ 
     # ---- Text preview ----
     with tabs[1]:
         if not silver_ok:
@@ -342,7 +334,7 @@ def render_document():
                 if preview["has_more"] and st.button("Show more", key=f"more_{doc_id}"):
                     st.session_state[length_key] = length + 2 * TEXT_STEP
                     st.rerun()
-
+ 
     # ---- Media player / raw file ----
     with tabs[2]:
         size = detail.get("file_size") or 0
@@ -365,14 +357,14 @@ def render_document():
                 if data:
                     st.code(data[:5000].decode("utf-8", errors="replace"), language="html", wrap_lines=True)
                     st.caption(f"First 5,000 of {len(data):,} bytes")
-
+ 
     # ---- Analysis ----
     with tabs[3]:
         if silver_ok and status:
             render_gold_tabs(status)
         else:
             st.info("Analysis results appear after Silver processing succeeds.")
-
+ 
     # ---- Edit & delete ----
     with tabs[4]:
         st.subheader("Edit metadata")
@@ -381,14 +373,11 @@ def render_document():
         else:
             with st.form(f"edit_{doc_id}"):
                 title = st.text_input("Title", value=detail.get("title") or "")
-                speaker = st.text_input("Speaker", value=detail.get("speaker") or "")
                 pub = detail.get("publication_date")
                 publication_date = st.date_input("Publication date", value=pd.to_datetime(pub).date() if pub else None, min_value=pd.Timestamp("1700-01-01").date())
-                language = st.text_input("Language", value=detail.get("language") or "", help="Language code, for example en")
                 if st.form_submit_button("Save metadata", type="primary"):
-                    ok = api_client.update_document_metadata(doc_id, title=title.strip() or None, speaker=speaker.strip() or None,
-                                                             publication_date=publication_date.isoformat() if publication_date else None,
-                                                             language=language.strip() or None)
+                    ok = api_client.update_document_metadata(doc_id, title=title.strip() or None,
+                                                             publication_date=publication_date.isoformat() if publication_date else None)
                     if ok:
                         st.session_state["_documents_flash"] = "Metadata saved."
                         st.rerun()
@@ -404,6 +393,6 @@ def render_document():
                 st.session_state["_documents_flash"] = f"Document #{doc_id} deleted."
                 st.session_state.pop(SELECT_KEY, None)
                 go("Library")
-
-
+ 
+ 
 {"Library": render_library, "Statistics": render_statistics, "Document": render_document}[view]()
