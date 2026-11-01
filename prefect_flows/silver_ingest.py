@@ -93,18 +93,41 @@ def upsert_silver(record: SilverRecord):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """
-                INSERT INTO silver.text (doc_id, title, publication_date, transcript, word_count, status_processing, processing_date, error_message)
-                VALUES (%s, %s, %s, %s, %s, %s, now(), %s)
-                ON CONFLICT (doc_id) DO UPDATE SET
-                    title = EXCLUDED.title, publication_date = EXCLUDED.publication_date,
-                    language = COALESCE(EXCLUDED.language, silver.text.language),
-                    transcript = EXCLUDED.transcript, word_count = EXCLUDED.word_count,
-                    status_processing = EXCLUDED.status_processing,
-                    processing_date = EXCLUDED.processing_date, error_message = EXCLUDED.error_message
-                """,
-                (record.doc_id, record.title, record.publication_date, record.language, record.transcript, record.word_count, record.status_processing, record.error_message),
+            """
+            INSERT INTO silver.text (
+                doc_id,
+                title,
+                publication_date,
+                language,
+                transcript,
+                word_count,
+                status_processing,
+                processing_date,
+                error_message
             )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, now(), %s)
+
+            ON CONFLICT (doc_id) DO UPDATE SET
+                title = EXCLUDED.title,
+                publication_date = EXCLUDED.publication_date,
+                language = COALESCE(EXCLUDED.language, silver.text.language),
+                transcript = EXCLUDED.transcript,
+                word_count = EXCLUDED.word_count,
+                status_processing = EXCLUDED.status_processing,
+                processing_date = EXCLUDED.processing_date,
+                error_message = EXCLUDED.error_message
+            """,
+            (
+                record.doc_id,
+                record.title,
+                record.publication_date,
+                record.language,
+                record.transcript,
+                record.word_count,
+                record.status_processing,
+                record.error_message,
+            ),
+        )
         conn.commit()
     finally:
         conn.close()

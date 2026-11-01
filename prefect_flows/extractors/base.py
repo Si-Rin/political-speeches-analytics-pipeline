@@ -23,6 +23,7 @@ class SilverRecord:
     title: Optional[str] = None
     publication_date: Optional[str] = None
     transcript: Optional[str] = None
+    language: Optional[str] = None
     status_processing: str = "pending"
     error_message: Optional[str] = None
 
@@ -54,9 +55,8 @@ class BaseExtractor(ABC):
         title = (user.get("title") or "").strip() or title
         pub_date = parse_date(user.get("publication_date")) or pub_date
         language = normalize_language_code(user.get("language")) or self.extract_language(local_path, raw_metadata, content)
-        return ExtractedContent(content=content, title=title, publication_date=pub_date)
+        return ExtractedContent(content=content, title=title, publication_date=pub_date, language=language)
 
-    @abstractmethod
     def extract_language(self, local_path: str, raw_metadata: dict, content: str) -> Optional[str]:
         """Deetect it from the text. Overridden where the language is known (audio/video: the language Whisper was told to use)."""
         return detect_language(content)

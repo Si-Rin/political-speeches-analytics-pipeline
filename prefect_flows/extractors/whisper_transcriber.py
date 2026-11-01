@@ -63,11 +63,14 @@ def resolve_language(raw_metadata: dict) -> str:
     English name ("French"). Unknown or unsupported values fall back to DEFAULT_LANGUAGE.
     """
     value = str(((raw_metadata or {}).get("user_provided") or {}).get("language") or "").strip().lower()
+   
     if not value:
-        return DEFAULT_LANGUAGE
+        return None
+
     value = _LANGUAGE_NAMES.get(value, value)
-    value = re.split(r"[-_]", value, maxsplit=1)[0]   # "en-us" -> "en"
-    return value if value in _SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+    value = re.split(r"[-_]", value, maxsplit=1)[0]
+
+    return value if value in _SUPPORTED_LANGUAGES else None
 
 
 def get_whisper_model() -> WhisperModel:
