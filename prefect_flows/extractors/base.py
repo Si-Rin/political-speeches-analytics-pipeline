@@ -58,8 +58,8 @@ class BaseExtractor(ABC):
 
     @abstractmethod
     def extract_language(self, local_path: str, raw_metadata: dict, content: str) -> Optional[str]:
-    """Deetect it from the text. Overridden where the language is known (audio/video: the language Whisper was told to use)."""
-    return detect_language(content)
+        """Deetect it from the text. Overridden where the language is known (audio/video: the language Whisper was told to use)."""
+        return detect_language(content)
 
     @abstractmethod
     def extract_content(self, local_path: str, raw_metadata: dict) -> Optional[str]:
