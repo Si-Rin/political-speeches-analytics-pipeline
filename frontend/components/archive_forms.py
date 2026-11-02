@@ -78,7 +78,7 @@ def render_ucsb() -> Optional[dict]:
         listing_url = st.text_input(
             "Listing URL",
             placeholder="https://www.presidency.ucsb.edu/people/president/donald-j-trump-1st-term",
-            help="Paste the plain URL or a Markdown link. The first-term/second-term URL determines whether Tweets or Truth Social posts are collected.",
+            help="Paste the plain URL or a Markdown link. The 1st-term/2nd-term URL determines whether Tweets or Truth Social posts are collected.",
             key="ucsb_url",
         )
         max_documents = st.number_input("Max NEW documents", min_value=1, max_value=500, value=10, step=1, key="ucsb_max", help="Pages already collected are skipped and do not count toward this limit.")

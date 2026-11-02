@@ -238,7 +238,7 @@ Sources are registered in `prefect_flows/sources/registry.py`. Adding one = a pa
 | `youtube_collection` | archive | Archive → YouTube playlist | Playlist or channel page, first *N* videos (default 10, max 200), audio-only by default. |
 | `internet_archive` | single | Internet Archive | One `archive.org/details/<id>` item, collected as audio. Segment exclusions (`excluded_indices`) are only available through CLI/params, see `ia_excluded_indices_example.json`. |
 | `miller_center` | archive | Archive → Miller Center | Speech page URLs, or a listing page (filters in the URL are preserved, pagination followed). |
-| `ucsb` | archive | Archive → UCSB | American Presidency Project listing. The URL must contain `first-term` (→ "Tweets of …") or `second-term` (→ "Truth Social Posts of …"); the link-text filter is derived from it. |
+| `ucsb` | archive | Archive → UCSB | American Presidency Project listing. The URL must contain `1st-term` (→ "Tweets of …") or `2nd-term` (→ "Truth Social Posts of …"); the link-text filter is derived from it. |
 | `web_crawl` | archive | Archive → Web crawl (Advanced) | Seed URLs + keywords, allowed domains, depth 2–5, max pages 1–500. |
 | `local_folder` | single | none (CLI/dev only) | Ingest every supported file in a folder. |
 | `internet_archive_collection` | archive | not implemented | Enum value reserved. |

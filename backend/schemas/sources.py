@@ -144,11 +144,11 @@ class MillerCenterRequest(_Request):
 
 def ucsb_link_text_filter(url: str) -> str:
     """The link-text filter is derived from the listing URL (never typed by the user):
-    "first-term" in the URL -> "tweets of"; "second-term" -> "truth social posts of"."""
+    "1st-term" in the URL -> "tweets of"; "2nd-term" -> "truth social posts of"."""
     normalized = re.sub(r"[\s_+]|%20", "-", url.lower())
-    first, second = "first-term" in normalized, "second-term" in normalized
+    first, second = "1st-term" in normalized, "2nd-term" in normalized
     if first == second:
-        raise ValueError("The listing URL must contain either 'first-term' (tweets) or 'second-term' (Truth Social posts)"
+        raise ValueError("The listing URL must contain either '1st-term' (tweets) or '2nd-term' (Truth Social posts)"
                          + (", not both" if first else ""))
     return "tweets of" if first else "truth social posts of"
 
