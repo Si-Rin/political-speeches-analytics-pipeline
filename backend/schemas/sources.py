@@ -20,6 +20,15 @@ def _http_url(value: str) -> str:
     return value
 
 
+def _normalize_markdown_url(value: str) -> str:
+    """Accept a pasted Markdown link and validate its destination as the actual URL."""
+    if not isinstance(value, str):
+        return value
+    value = value.strip()
+    match = re.fullmatch(r"\[[^\]]+\]\((https?://[^)\s]+)\)", value, flags=re.IGNORECASE)
+    return match.group(1) if match else value
+
+
 class _Request(BaseModel):
     model_config = ConfigDict(extra="forbid")
     dry_run: bool = Field(default=False, description="Preview: listing and cheap filters only, nothing fetched or stored")
@@ -148,6 +157,11 @@ class UcsbRequest(_Request):
     source: Literal["ucsb"]
     listing_url: str
     max_documents: int = Field(default=1, ge=1, le=500)
+    @field_validator("listing_url", mode="before")
+    @classmethod
+    def _unwrap_markdown_link(cls, v):
+        return _normalize_markdown_url(v)
+
     _check_url = field_validator("listing_url")(_http_url)
 
     @field_validator("listing_url")
