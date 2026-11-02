@@ -162,7 +162,7 @@ class UcsbRequest(_Request):
 
 
 RunRequest = Annotated[ 
-    Union[LocalFileRequest, DirectUrlRequest, YoutubeRequest, InternetArchiveRequest, WebCrawlRequest, MillerCenterRequest, UcsbRequest],
+    Union[LocalFileRequest, DirectUrlRequest, YoutubeRequest, YoutubeCollectionRequest, InternetArchiveRequest, WebCrawlRequest, MillerCenterRequest, UcsbRequest],
     Field(discriminator="source"),
 ]
 
@@ -171,6 +171,7 @@ SOURCE_MODE = {
     SourceName.LOCAL_FILE: Mode.SINGLE,
     SourceName.DIRECT_URL: Mode.SINGLE,
     SourceName.YOUTUBE: Mode.SINGLE,
+    SourceName.YOUTUBE_COLLECTION: Mode.ARCHIVE,
     SourceName.INTERNET_ARCHIVE: Mode.SINGLE,
     SourceName.WEB_CRAWL: Mode.ARCHIVE,
     SourceName.MILLER_CENTER: Mode.ARCHIVE,

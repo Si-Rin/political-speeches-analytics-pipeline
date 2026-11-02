@@ -20,6 +20,7 @@ SAMPLES = [
     sources.WebCrawlRequest(source="web_crawl", seed_urls=["https://x.org"], keywords=["tariff"], max_depth=3, max_pages=10),
     sources.MillerCenterRequest(source="miller_center", start_url="https://millercenter.org/the-presidency/presidential-speeches"),
     sources.UcsbRequest(source="ucsb", listing_url="https://www.presidency.ucsb.edu/advanced-search", max_documents=5),
+    sources.YoutubeCollectionRequest(source="youtube_collection", playlist_url="https://www.youtube.com/playlist?list=PL123456", download_format="audio", max_videos=20),
 ]
 
 
