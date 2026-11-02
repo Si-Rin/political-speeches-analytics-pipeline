@@ -126,6 +126,19 @@ def test_internet_archive_has_no_content_type_field_and_submits(api):
                                         title=None, publication_date=None, language=None, notes=None)
 
 
+
+def test_ucsb_form_submits_only_backend_contract_fields_and_accepts_markdown_input(api):
+    at = AppTest.from_file(PAGE).run()
+    at.radio(key="collection_mode").set_value("Archive collection").run()
+    at.radio(key="collection_archive_source").set_value("UCSB").run()
+    markdown_url = "[https://www.presidency.ucsb.edu/people/president/donald-j-trump-1st-term](https://www.presidency.ucsb.edu/people/president/donald-j-trump-1st-term)"
+    at.text_input(key="ucsb_url").input(markdown_url).run()
+    submit(at, "archive_ucsb", "Start collection").click().run()
+    assert not at.exception
+    assert api["create_run"] == [dict(
+        source="ucsb", dry_run=False, listing_url=markdown_url, max_documents=10,
+    )]
+
 # ---------------------------------------------------------------------------
 # Archive mode (web_crawl)
 # ---------------------------------------------------------------------------
