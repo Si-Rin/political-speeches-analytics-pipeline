@@ -19,7 +19,7 @@ SAMPLES = [
     sources.InternetArchiveRequest(source="internet_archive", url="https://archive.org/details/x", notes="n"),
     sources.WebCrawlRequest(source="web_crawl", seed_urls=["https://x.org"], keywords=["tariff"], max_depth=3, max_pages=10),
     sources.MillerCenterRequest(source="miller_center", start_url="https://millercenter.org/the-presidency/presidential-speeches"),
-    sources.UcsbRequest(source="ucsb", listing_url="https://www.presidency.ucsb.edu/advanced-search", max_documents=5),
+    sources.UcsbRequest(source="ucsb", listing_url="https://www.presidency.ucsb.edu/people/president/donald-j-trump-1st-term", max_documents=5),
     sources.YoutubeCollectionRequest(source="youtube_collection", playlist_url="https://www.youtube.com/playlist?list=PL123456", download_format="audio", max_videos=20),
 ]
 
@@ -29,6 +29,42 @@ def test_every_backend_payload_validates_against_the_flow_models(req):
     payload = prefect_params.to_prefect_params(req)
     registry.validate_params(payload.source_name.value, payload.params)          # extra="forbid" catches drift
     assert payload.mode.value == registry.get(payload.source_name.value).mode.value
+
+
+def test_ucsb_markdown_listing_url_is_normalized_and_filter_is_derived():
+    from pydantic import TypeAdapter
+
+    raw_url = "[https://www.presidency.ucsb.edu/people/president/donald-j-trump-1st-term](https://www.presidency.ucsb.edu/people/president/donald-j-trump-1st-term)"
+    req = TypeAdapter(sources.RunRequest).validate_python({
+        "source": "ucsb", "listing_url": raw_url, "max_documents": 7,
+    })
+    assert req.listing_url == "https://www.presidency.ucsb.edu/people/president/donald-j-trump-1st-term"
+    payload = prefect_params.to_prefect_params(req)
+    assert payload.params == {
+        "listing_url": req.listing_url,
+        "link_text_filter": "tweets of",
+        "max_documents": 7,
+    }
+
+
+def test_ucsb_second_term_derives_truth_social_filter():
+    req = sources.UcsbRequest(
+        source="ucsb",
+        listing_url="https://www.presidency.ucsb.edu/people/president/donald-j-trump-2nd-term",
+    )
+    assert req.link_text_filter == "truth social posts of"
+    assert prefect_params.to_prefect_params(req).params["link_text_filter"] == "truth social posts of"
+
+
+def test_ucsb_client_cannot_override_derived_filter():
+    from pydantic import TypeAdapter, ValidationError
+
+    with pytest.raises(ValidationError, match="link_text_filter"):
+        TypeAdapter(sources.RunRequest).validate_python({
+            "source": "ucsb",
+            "listing_url": "https://www.presidency.ucsb.edu/people/president/donald-j-trump-1st-term",
+            "link_text_filter": "tweets of",
+        })
 
 
 def test_every_backend_source_is_covered_and_registered():
