@@ -3,7 +3,6 @@ Archive-mode forms. `web_crawl` is the only archive source the backend runs toda
 research sources: Miller Center, UCSB, YouTube collection, IA collection); this stays "Advanced" until then.
 The fuller archive experience (research keywords everywhere, discovery-log preview, cost hint) is phase 5.
 """
-import re
 from typing import Optional
 
 import streamlit as st
@@ -73,20 +72,15 @@ def render_miller_center() -> Optional[dict]:
     return run
 
 
-def ucsb_link_text_filter(url: str) -> Optional[str]:
-    """Same rule as backend/schemas/sources.py: 'first-term' -> tweets, 'second-term' -> Truth Social."""
-    normalized = re.sub(r"[\s_+]|%20", "-", url.lower())
-    first, second = "first-term" in normalized, "second-term" in normalized
-    if first == second:
-        return None
-    return "tweets of" if first else "truth social posts of"
-
-
 def render_ucsb() -> Optional[dict]:
     st.caption("American Presidency Project (presidency.ucsb.edu): a search/listing URL.  paste the listing URL of the term to collect, either first or second term.")
     with st.form("archive_ucsb"):
-        listing_url = st.text_input("Listing URL", placeholder="https://www.presidency.ucsb.edu/...", key="ucsb_url")
-        link_text_filter = st.text_input("Link text filter", value="tweets of", key="ucsb_filter")
+        listing_url = st.text_input(
+            "Listing URL",
+            placeholder="https://www.presidency.ucsb.edu/people/president/donald-j-trump-1st-term",
+            help="Paste the plain URL or a Markdown link. The first-term/second-term URL determines whether Tweets or Truth Social posts are collected.",
+            key="ucsb_url",
+        )
         max_documents = st.number_input("Max NEW documents", min_value=1, max_value=500, value=10, step=1, key="ucsb_max", help="Pages already collected are skipped and do not count toward this limit.")
         submitted = st.form_submit_button("Start collection", type="primary")
     if not submitted:
@@ -95,8 +89,7 @@ def render_ucsb() -> Optional[dict]:
         st.warning("Enter a listing URL.")
         return None
     with st.spinner("Starting collection..."):
-        run = api_client.create_run("ucsb", listing_url=listing_url.strip(), link_text_filter=link_text_filter.strip() or "tweets of",
-                                    max_documents=int(max_documents))
+        run = api_client.create_run("ucsb", listing_url=listing_url.strip(), max_documents=int(max_documents))
     if run and run.get("status") != "failed":
         st.success(f"Collection started (run `{run['run_id']}`). Follow it on the Runs page.")
     return run
