@@ -12,7 +12,7 @@ That keeps the document-level result a valid probability distribution instead of
 from collections import defaultdict
 from typing import Dict
 
-from prefect_flows.analytics.text_chunking import chunk_text
+from prefect_flows.analytics.text_chunking import chunk_text, resolve_max_length
 
 # j-hartmann/emotion-english-distilroberta-base: 7-class (anger, disgust, fear, joy, neutral, sadness, surprise), single softmax distribution
 # Deliberately not SamLowe/roberta-base-go_emotions (28 fine-grained, multi-label/sigmoid emotions) — that's too granular for a single "dominant emotion" and isn't a probability distribution to average
@@ -49,6 +49,8 @@ def analyze_emotion(text: str) -> Dict:
     """
     pipe = get_pipeline()
     chunks = chunk_text(text=text, tokenizer=pipe.tokenizer, model=pipe.model)
+    # Explicit cap: some Hub tokenizers never set model_max_length, which turns truncation=True into a no-op
+    max_length = resolve_max_length(pipe.tokenizer, pipe.model)
 
     weighted_scores: Dict[str, float] = defaultdict(float)
     total_words = 0
@@ -56,7 +58,7 @@ def analyze_emotion(text: str) -> Dict:
         chunk_words = len(chunk.split())
         if chunk_words == 0:
             continue
-        chunk_result = pipe(chunk, truncation=True)[0]  # list of {"label": ..., "score": ...} for every class
+        chunk_result = pipe(chunk, truncation=True, max_length=max_length)[0]  # list of {"label": ..., "score": ...} for every class
         for entry in chunk_result:
             weighted_scores[entry["label"].lower()] += entry["score"] * chunk_words
         total_words += chunk_words

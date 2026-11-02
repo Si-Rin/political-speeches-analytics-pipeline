@@ -52,6 +52,34 @@ def resolve_max_length(
     )
 
 
+def _token_len(text: str, tokenizer: PreTrainedTokenizerBase) -> int:
+    """Length of `text` as the model will see it: tokenized as ONE sequence, special tokens included."""
+    return len(tokenizer(text, add_special_tokens=True, truncation=False)["input_ids"])
+
+
+def _enforce_limit(text: str, tokenizer: PreTrainedTokenizerBase, limit: int) -> List[str]:
+    """
+    Re-measure a finished chunk and split it until every piece really fits `limit` tokens.
+
+    Needed because the packing step above sums the token counts of sentences encoded ONE BY ONE, but the model receives the
+    sentences joined in a single string. Byte-level BPE (RoBERTa) tokenizes a word differently with or without a leading
+    space and at sentence boundaries, so the joined chunk can be a few tokens longer than the sum (observed: 517 tokens for a
+    chunk budgeted at 510, which crashed RoBERTa whose position table stops at 514).
+    """
+    if _token_len(text, tokenizer) <= limit:
+        return [text]
+    sentences = [s for s in SENTENCE_SPLIT_RE.split(text) if s.strip()]
+    units = sentences if len(sentences) > 1 else text.split()
+    if len(units) > 1:
+        mid = len(units) // 2
+        return (_enforce_limit(" ".join(units[:mid]), tokenizer, limit)
+                + _enforce_limit(" ".join(units[mid:]), tokenizer, limit))
+    # A single unbreakable "word" longer than the window (pathological): cut it by tokens.
+    ids = tokenizer(text, add_special_tokens=False, truncation=False)["input_ids"]
+    keep = max(1, limit - tokenizer.num_special_tokens_to_add(pair=False))
+    return [tokenizer.decode(ids[:keep])]
+
+
 def chunk_text(
     text: str,
     tokenizer: PreTrainedTokenizerBase,
@@ -74,7 +102,7 @@ def chunk_text(
         reserved_special_tokens: override how many positions are reserved for special tokens (e.g. <s>, </s>). Usually left None so it's computed exactly via tokenizer.num_special_tokens_to_add().
 
     Returns:
-        List of text chunks, each guaranteed to tokenize to <= max_length tokens (including special tokens) under `tokenizer`.
+        List of text chunks, each VERIFIED (re-tokenized as the joined string, not estimated from its parts) to be <= max_length tokens including special tokens under `tokenizer`.
     """
     if max_length is None:
         max_length = resolve_max_length(tokenizer, model=model)
@@ -88,9 +116,14 @@ def chunk_text(
             f"{reserved_special_tokens} reserved special tokens."
         )
         
+    # Hard limit for ONE sequence once special tokens are added; callers that reserve more positions (a sentence pair, e.g. BART
+    # zero-shot with its hypothesis) have a proportionally smaller window.
+    single_specials = tokenizer.num_special_tokens_to_add(pair=False)
+    limit = max_length - (reserved_special_tokens - single_specials)
+
     sentences = [s for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s.strip()]
     if not sentences:
-        return [text] if text.strip() else []
+        return _enforce_limit(text, tokenizer, limit) if text.strip() else []
     
     # Batch-encode once — cheaper than tokenizing sentence-by-sentence in the loop.
     sent_token_lens = [
@@ -139,4 +172,5 @@ def chunk_text(
         current_len += sent_len
 
     flush()
-    return chunks
+    # The packing above measures sentences separately; verify the real, joined chunks (see _enforce_limit).
+    return [piece for chunk in chunks for piece in _enforce_limit(chunk, tokenizer, limit)]
