@@ -12,7 +12,7 @@ So chunks are combined with a length-weighted AVERAGE instead — a document-lev
 from collections import defaultdict
 from typing import Dict, List
 
-from prefect_flows.analytics.text_chunking import chunk_text
+from prefect_flows.analytics.text_chunking import chunk_text, resolve_max_length
 
 # cardiffnlp/twitter-roberta-base-sentiment-latest: 3-class (negative/neutral/positive) 
 # A neutral class matters here since a lot of a political speech is factual/procedural rather than clearly polarized, unlike a binary pos/neg model
