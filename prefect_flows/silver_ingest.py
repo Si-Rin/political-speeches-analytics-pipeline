@@ -43,7 +43,7 @@ def get_pending_documents(limit: Optional[int] = None, doc_ids: Optional[list[in
       elif limit:
         cur.execute(base + " ORDER BY b.doc_id LIMIT %s", (limit,))
       else:
-          cur.execute(base + " ORDER BY b.doc_id")
+          cur.execute(base + " ORDER BY b.file_size")
       rows = cur.fetchall()
       return [{"doc_id": r[0], "source_type": r[1], "storage_path": r[2], "raw_metadata": r[3] or {}, "source_url": r[4]} for r in rows]
   finally:
