@@ -16,7 +16,7 @@ push: null
 pull:
 - prefect.deployments.steps.git_clone:
     repository: https://github.com/Si-Rin/political-speeches-analytics-pipeline.git
-    branch: collection-redesign
+    branch: main
 
 # the deployments section allows you to provide configuration for deploying flows
 deployments:
