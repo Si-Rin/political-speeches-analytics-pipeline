@@ -12,7 +12,7 @@ So chunks are combined with a length-weighted AVERAGE instead — a document-lev
 from collections import defaultdict
 from typing import Dict, List
 
-from prefect_flows.analytics.text_chunking import chunk_text
+from prefect_flows.analytics.text_chunking import chunk_text, resolve_max_length
 
 # cardiffnlp/twitter-roberta-base-sentiment-latest: 3-class (negative/neutral/positive) 
 # A neutral class matters here since a lot of a political speech is factual/procedural rather than clearly polarized, unlike a binary pos/neg model
@@ -48,6 +48,8 @@ def analyze_sentiment(text: str) -> Dict:
     """
     pipe = get_pipeline()
     chunks = chunk_text(text=text, tokenizer=pipe.tokenizer, model=pipe.model)
+    # Explicit cap: some Hub tokenizers never set model_max_length, which turns truncation=True into a no-op
+    max_length = resolve_max_length(pipe.tokenizer, pipe.model)
 
     weighted_scores: Dict[str, float] = defaultdict(float)
     total_words = 0
@@ -55,7 +57,7 @@ def analyze_sentiment(text: str) -> Dict:
         chunk_words = len(chunk.split())
         if chunk_words == 0:
             continue
-        chunk_result = pipe(chunk, truncation=True)[0]  # list of {"label": ..., "score": ...} for every class
+        chunk_result = pipe(chunk, truncation=True, max_length=max_length)[0]  # list of {"label": ..., "score": ...} for every class
         for entry in chunk_result:
             weighted_scores[entry["label"].lower()] += entry["score"] * chunk_words
         total_words += chunk_words

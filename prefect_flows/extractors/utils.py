@@ -81,3 +81,22 @@ def clean_site_name_from_title(title: str) -> str:
             return " - ".join(p.strip() for p in parts[1:])
             
     return title
+
+def normalize_language_code(value: Optional[str]) -> Optional[str]:
+    """"en-US" / "fr_CA" / "EN" -> "en" / "fr" / "en". Anything that is not a 2-3 letter code (e.g. "French") -> None."""
+    if not value:
+        return None
+    code = re.split(r"[-_]", str(value).strip().lower(), maxsplit=1)[0]
+    return code if re.fullmatch(r"[a-z]{2,3}", code) else None
+
+
+def detect_language(text: Optional[str], sample_chars: int = 5000) -> Optional[str]:
+    """ISO 639-1 code detected from the text (langdetect, deterministic), or None if the text is too short."""
+    if not text or len(text.split()) < 5:
+        return None
+    try:
+        from langdetect import DetectorFactory, detect
+        DetectorFactory.seed = 0
+        return normalize_language_code(detect(text[:sample_chars]))
+    except Exception:           # a missing language must never fail the extraction
+        return None

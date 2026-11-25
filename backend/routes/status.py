@@ -9,13 +9,13 @@ from typing import List, Optional
 
 from fastapi import APIRouter
 
-from prefect_flows.clients import get_postgres_connection
+from backend.db import get_connection
 from backend.schemas import PipelineStatus, PipelineStatusResponse, GoldModuleStatus
 
 router = APIRouter()
 
 
-# Gold analytical modules : {"Module identifier by API" : "corresponding column in gold.analytics"}
+# Gold analytical modules : {"Module identifier by API" : "corresponding column in gold.analytics"} (topics / keywords are corpus-level --> not part of a document's pipeline status)
 GOLD_MODULES = {
     "lexical": "lex_metrics",
     "syntactic": "syntactic_metrics",
@@ -23,8 +23,6 @@ GOLD_MODULES = {
     "sentiment": "sentiment",
     "emotions": "emotions",
     "labels": "labels",
-    "topics": "topics",
-    "keywords": "keywords",
 }
 
 
@@ -58,7 +56,7 @@ def _gold_status_for_row(gold_row: Optional[tuple]) -> tuple[List[GoldModuleStat
 
 @router.get("/status/{doc_id}", response_model=PipelineStatus)
 def get_status(doc_id: int):
-    conn = get_postgres_connection()
+    conn = get_connection()
 
     try:
         with conn.cursor() as cur:
@@ -102,7 +100,7 @@ def get_status(doc_id: int):
 
 @router.get("/status", response_model=PipelineStatusResponse)
 def get_all_statuses():
-    conn = get_postgres_connection()
+    conn = get_connection()
 
     try:
         with conn.cursor() as cur:

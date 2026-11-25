@@ -16,9 +16,11 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
+from prefect_flows.collection.handles import HttpHandle
+from prefect_flows.collection.urls import safe_file_name
 from prefect_flows.sources.base import BaseSource, Candidate
 
-DEFAULT_USER_AGENT = "PoliticalSpeechesBot/1.0 (+research project; contact: grirasirin@gmail.com)"
+from prefect_flows.http_config import USER_AGENT as DEFAULT_USER_AGENT
 
 DEFAULT_LINK_TEXT_FILTERS = ("tweets of", "truth social posts of")
 
@@ -83,8 +85,8 @@ class UcsbSource(BaseSource):
         return Candidate(
             source_url=url,
             source_type="text",
-            file_name=url.rstrip("/").split("/")[-1] + ".html",
-            is_local=False,
+            file_name=safe_file_name(url),
+            handle=HttpHandle(url, filename=safe_file_name(url)),
             mime_type="text/html",
             raw_metadata={
                 "source_name": SOURCE_NAME,
@@ -94,7 +96,7 @@ class UcsbSource(BaseSource):
             },
         )
 
-    def discover(self) -> Iterator[Candidate]:
+    def candidates(self) -> Iterator[Candidate]:
         current_url = self.listing_url
         visited: Set[str] = set()
         yielded_urls: Set[str] = set()

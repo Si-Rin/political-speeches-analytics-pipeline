@@ -39,7 +39,7 @@ def check_postgres() -> str:
         cur.execute(
             """
             SELECT table_schema, table_name FROM information_schema.tables
-            WHERE table_schema IN ('bronze', 'silver', 'gold')
+            WHERE table_schema IN ('bronze', 'silver', 'gold', 'collection')
             ORDER BY table_schema, table_name;
             """
         )
@@ -50,6 +50,8 @@ def check_postgres() -> str:
         ("bronze", "documents"),
         ("silver", "text"),
         ("gold", "analytics"),
+        ("collection", "runs"),
+        ("bronze", "discovery_log"),
     }
     found = {(r[0], r[1]) for r in rows}
     missing = expected - found

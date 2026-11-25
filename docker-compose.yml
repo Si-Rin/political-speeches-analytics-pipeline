@@ -30,6 +30,8 @@ services:
       /bin/sh -c "
       mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
       mc mb -p local/bronze || true &&
+      mc mb -p local/staging || true &&
+      mc ilm rule add --expire-days 1 local/staging || true &&
       mc anonymous set download local/bronze || true &&
       exit 0
       "
@@ -59,6 +61,9 @@ services:
     restart: unless-stopped
     ports:
       - "4200:4200"
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       PREFECT_UI_URL: http://localhost:4200
       PREFECT_API_URL: http://0.0.0.0:4200/api
@@ -86,23 +91,40 @@ services:
     working_dir: /app
     command: >
       /bin/sh -c "
-      prefect work-pool create default-pool --type process || true &&
-      prefect --no-prompt deploy prefect_flows/bronze_ingest.py:ingest_bronze --name default --pool default-pool --work-queue default"
+      prefect work-pool create ingestion-pool --type process || true &&
+      prefect work-pool create gold-pool --type process || true &&
+      prefect --no-prompt deploy prefect_flows/bronze_ingest.py:ingest_bronze --name default --pool ingestion-pool --work-queue default &&
+      prefect --no-prompt deploy prefect_flows/gold_topics.py:ingest_gold_topics --name default --pool gold-pool --work-queue default
+      "
     volumes:
       - .:/app
 
-  prefect-worker:
+
+  pot-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:1.3.1
+    container_name: political-speeches-pot-provider
+    restart: unless-stopped
+    init: true
+
+  ingestion-worker:
     build:
       context: .
       dockerfile: prefect_flows/Dockerfile
-    container_name: political-speeches-prefect-worker
+    container_name: political-speeches-ingestion-worker
     restart: unless-stopped
     depends_on:
       prefect-server:
         condition: service_healthy
       prefect-deploy:
         condition: service_completed_successfully
-    environment:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment: &worker-env
       PREFECT_API_URL: http://prefect-server:4200/api
       MINIO_ENDPOINT: minio:9000
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -112,8 +134,37 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      YTDLP_POT_URL: http://pot-provider:4416
+      WHISPER_DEVICE: cuda
+      WHISPER_COMPUTE_TYPE: float16
     working_dir: /app
-    command: prefect worker start --pool default-pool
+    command: prefect worker start --pool ingestion-pool
+    volumes:
+      - .:/app
+    mem_limit: 4g
+
+  gold-worker:
+    build:
+      context: .
+      dockerfile: prefect_flows/Dockerfile
+    container_name: political-speeches-gold-worker
+    restart: unless-stopped
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+      prefect-deploy:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      <<: *worker-env
+    working_dir: /app
+    command: prefect worker start --pool gold-pool
     volumes:
       - .:/app
 
@@ -141,6 +192,10 @@ services:
       PREFECT_API_URL: http://prefect-server:4200/api
       PREFECT_FLOW_NAME: bronze-ingestion
       PREFECT_DEPLOYMENT_NAME: default
+      MINIO_ENDPOINT: minio:9000                  
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      YTDLP_POT_URL: http://pot-provider:4416    
     ports:
       - "8000:8000"
     healthcheck:

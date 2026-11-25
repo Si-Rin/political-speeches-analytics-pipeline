@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Iterator, Optional
 from urllib.parse import urlparse
 
+from prefect_flows.collection.handles import HttpHandle, LocalPathHandle, StagingObjectHandle
 from prefect_flows.sources.base import BaseSource, Candidate
 
 
@@ -20,6 +21,9 @@ class SingleItemSource(BaseSource):
         source_type: str,
         is_local: bool,
         raw_metadata: Optional[dict] = None,
+        staging_key: Optional[str] = None,
+        staging_client=None,
+        staging_bucket: str = "staging",
     ):
         """
         location: a URL (is_local=False) or a local filesystem path (is_local=True)
@@ -30,8 +34,22 @@ class SingleItemSource(BaseSource):
         self.source_type = source_type
         self.is_local = is_local
         self.raw_metadata = raw_metadata
+        self.staging_key, self.staging_client, self.staging_bucket = staging_key, staging_client, staging_bucket
 
-    def discover(self) -> Iterator[Candidate]:
+    def candidates(self) -> Iterator[Candidate]:
+        if self.staging_key:
+            # An upload parked in MinIO by the backend: source_url is stable and never a worker-local path
+            file_name = self.staging_key.split("/", 1)[-1]
+            mime_type, _ = mimetypes.guess_type(file_name)
+            yield Candidate(
+                source_url=f"upload://{self.staging_key}",
+                source_type=self.source_type,
+                file_name=file_name,
+                handle=StagingObjectHandle(self.staging_client, self.staging_key, bucket=self.staging_bucket),
+                mime_type=mime_type,
+                raw_metadata=self.raw_metadata,
+            )
+            return
         if self.is_local:
             path = Path(self.location)
             if not path.exists() or not path.is_file():
@@ -48,7 +66,7 @@ class SingleItemSource(BaseSource):
             source_url=source_url,
             source_type=self.source_type,
             file_name=file_name,
-            is_local=self.is_local,
+            handle=LocalPathHandle(path) if self.is_local else HttpHandle(self.location, filename=file_name),
             mime_type=mime_type,
             raw_metadata=self.raw_metadata,
         )

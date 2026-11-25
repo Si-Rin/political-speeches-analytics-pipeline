@@ -6,6 +6,7 @@ import mimetypes
 from pathlib import Path
 from typing import Iterator
 
+from prefect_flows.collection.handles import LocalPathHandle
 from prefect_flows.sources.base import BaseSource, Candidate
 
 _EXT_TO_SOURCE_TYPE = {
@@ -19,7 +20,7 @@ class LocalFolderSource(BaseSource):
     def __init__(self, folder: str):
         self.folder = Path(folder)
 
-    def discover(self) -> Iterator[Candidate]:
+    def candidates(self) -> Iterator[Candidate]:
         if not self.folder.exists():
             raise FileNotFoundError(f"Local source folder not found: {self.folder}")
 
@@ -35,6 +36,6 @@ class LocalFolderSource(BaseSource):
                 source_url=str(path.resolve()),
                 source_type=source_type,
                 file_name=path.name,
-                is_local=True,
+                handle=LocalPathHandle(path),
                 mime_type=mime_type,
             )
