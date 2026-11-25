@@ -4,8 +4,6 @@ An end-to-end data engineering and NLP application that **collects** political s
 
 The current case study is a corpus of public content by **Donald Trump** (speeches, interviews, tweets / Truth Social posts). The speaker is set automatically for this corpus. The code itself is source-agnostic: new sources plug in through a registry.
 
-> **Branch note:** this README describes the `collection-redesign` branch (run-based collection, discovery log, Documents page, YouTube playlists, separate Prefect work pools).
-
 ---
 
 ## Table of contents
@@ -73,7 +71,7 @@ Design rules worth knowing:
 |---|---|
 | The **backend never imports `prefect` or `prefect_flows`**. It talks to the Prefect HTTP API only. | Keeps the backend/Streamlit environment compatible with `anyio>=4`; Prefect 2 pins `anyio<4`. A test enforces this. |
 | The only contract between backend and flows is **JSON params + enum values + the database schema**. | `tests/test_backend_contract.py` fails if either side drifts. |
-| Three separate Python environments: flows (`requirements.txt`), backend (`backend/requirements.txt`), frontend (`frontend/requirements.txt`). | Dependency conflicts (see above). |
+| Three separate Python environments: flows (`requirements.txt`), backend (`backend/requirements.txt`), frontend (`frontend/requirements.txt`). | Dependency conflicts (see the first rule). |
 | The source adapters yield **candidates lazily**, one at a time. | Large collections are never held in memory. |
 | Source-specific code lives in `prefect_flows/sources/` and `prefect_flows/extractors/`; the flow and the backend schemas stay generic. | A test asserts the flow module contains no source-specific code. |
 
@@ -89,7 +87,7 @@ Design rules worth knowing:
 ### 1. Clone
 
 ```bash
-git clone --branch collection-redesign https://github.com/Si-Rin/political-speeches-analytics-pipeline.git
+git clone https://github.com/Si-Rin/political-speeches-analytics-pipeline.git
 cd political-speeches-analytics-pipeline
 ```
 
@@ -468,7 +466,7 @@ The database tests are skipped unless `TEST_DATABASE_URL` is set; the schema (`i
 ```text
 .
 ├── docker-compose.yml
-├── prefect.yaml                      # deployment configuration (if present on the branch)
+├── prefect.yaml                      # deployment configuration
 ├── requirements.txt                  # flows + tests
 ├── init_scripts/postgres/
 │   ├── 01-create-prefect-db.sql
@@ -522,9 +520,6 @@ The backend looks for `gold-topics/default`. Check that `prefect-deploy` finishe
 ```bash
 prefect --no-prompt deploy prefect_flows/gold_topics.py:ingest_gold_topics --name default --pool gold-pool --work-queue default
 ```
-
-**My code change is ignored by the flow**
-See [Code loading](#code-loading-check-this-before-debugging-my-change-has-no-effect).
 
 **A run stays `queued`**
 Check that the right worker is online in the Prefect UI (`ingestion-worker` for collection, `gold-worker` for topics) and that the run has a Prefect flow-run id. A run that never reached Prefect is failed automatically after 10 minutes.
